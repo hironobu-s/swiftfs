@@ -14,7 +14,8 @@ func main() {
 var config *objfs.Config
 
 func newCliApp() *cli.App {
-	config = &objfs.Config{}
+
+	config = objfs.NewConfig()
 
 	app := cli.NewApp()
 	app.Name = "swiftfsd"
@@ -24,7 +25,6 @@ func newCliApp() *cli.App {
 	app.Email = "hiro@hironobu.org"
 
 	app.Flags = config.GetFlags()
-	app.Before = config.SetConfigFromContext
 
 	app.Action = action
 
@@ -34,6 +34,8 @@ func newCliApp() *cli.App {
 func action(c *cli.Context) {
 
 	log.SetLevel(log.DebugLevel)
+
+	config.SetConfigFromContext(c)
 
 	fs := objfs.NewObjFs(config)
 	if err := fs.Mount(); err != nil {

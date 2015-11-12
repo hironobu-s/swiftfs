@@ -7,10 +7,6 @@ import (
 	"github.com/codegangsta/cli"
 )
 
-type DriverConfig interface {
-	GetFlags() []cli.Flag
-}
-
 type Container struct {
 	Name string
 }
@@ -22,11 +18,13 @@ type Object struct {
 	LastModified time.Time
 }
 
-type Driver interface {
-	// GenerateFlags() []cli.Flag
-	// ValidateFlags(*cli.Context) error
+type DriverConfig interface {
+	GetFlags() []cli.Flag
+	SetConfigFromContext(*cli.Context) error
+}
 
-	Initialize() error
+type Driver interface {
+	Initialize(DriverConfig) error
 	List() []*Object
 	Upload(string, io.ReadSeeker) error
 	Delete(string) error

@@ -1,7 +1,9 @@
 package openstack
 
 import (
+	"fmt"
 	"io"
+	"os"
 
 	"time"
 
@@ -20,11 +22,77 @@ import (
 type SwiftConfig struct {
 	ContainerName  string
 	ObjectListSize int
+	authOptions    gophercloud.AuthOptions
 }
 
 func (c *SwiftConfig) GetFlags() []cli.Flag {
-	flags := make([]cli.Flag, 0)
+	flags := []cli.Flag{
+		cli.StringFlag{
+			Name:  "os-user-id",
+			Value: "",
+			Usage: "[OpenStack] User ID",
+		},
+		cli.StringFlag{
+			Name:  "os-username",
+			Value: "",
+			Usage: "[OpenStack] Username",
+		},
+		cli.StringFlag{
+			Name:  "os-password",
+			Value: "",
+			Usage: "[OpenStack] Password",
+		},
+		cli.StringFlag{
+			Name:  "os-tenant-id",
+			Value: "",
+			Usage: "[OpenStack] Tenant Id",
+		},
+		cli.StringFlag{
+			Name:  "os-tenant-name",
+			Value: "",
+			Usage: "[OpenStack] Tenant Name",
+		},
+		cli.StringFlag{
+			Name:  "os-auth-url",
+			Value: "",
+			Usage: "[OpenStack] Auth URL",
+		},
+	}
 	return flags
+}
+
+func (c *SwiftConfig) SetConfigFromContext(ctx *cli.Context) (err error) {
+
+	if os.Getenv("OS_AUTH_URL") != "" {
+		log.Debugf("[OpenStack] Use auth parameters in ENV.")
+
+		c.authOptions, err = openstack.AuthOptionsFromEnv()
+		if err != nil {
+			return err
+		}
+
+	} else {
+		log.Debugf("[OpenStack] Use auth parameters via command-line options.")
+
+		c.authOptions = gophercloud.AuthOptions{
+			IdentityEndpoint: ctx.String("os-auth-url"),
+			UserID:           ctx.String("os-user-id"),
+			Username:         ctx.String("os-username"),
+			Password:         ctx.String("os-password"),
+			TenantID:         ctx.String("os-tenant-id"),
+			TenantName:       ctx.String("os-tenant-name"),
+		}
+	}
+
+	// Enable auto reauth
+	c.authOptions.AllowReauth = true
+
+	return nil
+}
+
+func NewSwiftClient() *SwiftClient {
+	cli := &SwiftClient{}
+	return cli
 }
 
 type SwiftClient struct {
@@ -35,29 +103,26 @@ type SwiftClient struct {
 	objects []drivers.Object
 }
 
-func NewSwiftClient(config *SwiftConfig) *SwiftClient {
-	cli := &SwiftClient{
-		config: config,
-	}
-	return cli
-}
+func (s *SwiftClient) Initialize(config drivers.DriverConfig) error {
 
-func (c *SwiftClient) Initialize() error {
-	opts, err := openstack.AuthOptionsFromEnv()
+	c, ok := config.(*SwiftConfig)
+	if !ok {
+		return fmt.Errorf("Worng type for argument. want type as *SwiftConfig.")
+	}
+	s.config = c
+
+	if s.config.authOptions.Username != "" {
+		log.Debugf("[OpenStack] Authenticating by username(%s)", s.config.authOptions.Username)
+	} else {
+		log.Debugf("[OpenStack] Authenticating by user-id(%s)", s.config.authOptions.UserID)
+	}
+
+	provider, err := openstack.AuthenticatedClient(s.config.authOptions)
 	if err != nil {
 		return err
 	}
 
-	// Enable reauth
-	opts.AllowReauth = true
-
-	log.Debugf("[SWIFT] Authenticating for OpenStack user(%s)...", opts.Username)
-	provider, err := openstack.AuthenticatedClient(opts)
-	if err != nil {
-		return err
-	}
-
-	c.client, err = openstack.NewObjectStorageV1(provider, gophercloud.EndpointOpts{})
+	s.client, err = openstack.NewObjectStorageV1(provider, gophercloud.EndpointOpts{})
 	if err != nil {
 		return err
 	}
@@ -65,13 +130,13 @@ func (c *SwiftClient) Initialize() error {
 	return nil
 }
 
-func (c *SwiftClient) List() (objects []*drivers.Object) {
+func (s *SwiftClient) List() (objects []*drivers.Object) {
 
-	pager := swiftobjects.List(c.client, c.config.ContainerName, swiftobjects.ListOpts{
+	pager := swiftobjects.List(s.client, s.config.ContainerName, swiftobjects.ListOpts{
 		Full: true,
 	})
 
-	objects = make([]*drivers.Object, c.config.ObjectListSize)
+	objects = make([]*drivers.Object, s.config.ObjectListSize)
 	var i = 0
 	pager.EachPage(func(page pagination.Page) (bool, error) {
 		objlist, err := swiftobjects.ExtractInfo(page)
@@ -107,31 +172,31 @@ func (c *SwiftClient) List() (objects []*drivers.Object) {
 		return true, nil
 	})
 
-	log.Debugf("[SWIFT] Fetch object list. number of objects is %d.", i)
+	log.Debugf("[OpenStack] Fetch object list. number of objects is %d.", i)
 	return objects
 }
 
-func (c *SwiftClient) Upload(name string, data io.ReadSeeker) error {
+func (s *SwiftClient) Upload(name string, data io.ReadSeeker) error {
 	opts := swiftobjects.CreateOpts{}
-	result := swiftobjects.Create(c.client, c.config.ContainerName, name, data, opts)
+	result := swiftobjects.Create(s.client, s.config.ContainerName, name, data, opts)
 	if result.Err != nil {
 		return result.Err
 	}
 	return nil
 }
 
-func (c *SwiftClient) Delete(name string) error {
-	result := swiftobjects.Delete(c.client, c.config.ContainerName, name, nil)
+func (s *SwiftClient) Delete(name string) error {
+	result := swiftobjects.Delete(s.client, s.config.ContainerName, name, nil)
 	return result.Err
 }
 
-func (c *SwiftClient) Get(name string) (obj *drivers.Object, err error) {
+func (s *SwiftClient) Get(name string) (obj *drivers.Object, err error) {
 
 	opts := swiftobjects.DownloadOpts{}
 
-	log.Debugf("[SWIFT] Download object named \"%s\"", name)
+	log.Debugf("[OpenStack] Download object named \"%s\"", name)
 
-	result := swiftobjects.Download(c.client, c.config.ContainerName, name, opts)
+	result := swiftobjects.Download(s.client, s.config.ContainerName, name, opts)
 	if result.Err != nil {
 		return nil, err
 	}
@@ -151,20 +216,20 @@ func (c *SwiftClient) Get(name string) (obj *drivers.Object, err error) {
 	return obj, nil
 }
 
-func (c *SwiftClient) CreateContainer(name string) error {
+func (s *SwiftClient) CreateContainer(name string) error {
 	opts := swiftcontainers.CreateOpts{}
-	result := swiftcontainers.Create(c.client, name, opts)
+	result := swiftcontainers.Create(s.client, name, opts)
 	return result.Err
 }
 
-func (c *SwiftClient) DeleteContainer(name string) error {
-	result := swiftcontainers.Delete(c.client, name)
+func (s *SwiftClient) DeleteContainer(name string) error {
+	result := swiftcontainers.Delete(s.client, name)
 	return result.Err
 }
 
-func (c *SwiftClient) ListContainer() {
+func (s *SwiftClient) ListContainer() {
 
-	pager := swiftcontainers.List(c.client, swiftcontainers.ListOpts{Full: true})
+	pager := swiftcontainers.List(s.client, swiftcontainers.ListOpts{Full: true})
 	pager.EachPage(func(page pagination.Page) (bool, error) {
 		containerList, err := swiftcontainers.ExtractInfo(page)
 		if err != nil {
@@ -176,21 +241,4 @@ func (c *SwiftClient) ListContainer() {
 		}
 		return true, nil
 	})
-}
-
-// -------------------
-
-func GenerateFlags() []cli.Flag {
-	flags := []cli.Flag{
-		cli.StringFlag{
-			Name:  "os-username",
-			Value: "",
-			Usage: "OpenStack Username",
-		},
-	}
-	return flags
-}
-
-func ValidateFlags(*cli.Context) error {
-	return nil
 }

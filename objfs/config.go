@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/codegangsta/cli"
-	"github.com/hironobu-s/objfs/drivers/openstack"
 )
 
 type Config struct {
@@ -51,7 +50,7 @@ func (c *Config) GetFlags() []cli.Flag {
 	flags = append(flags, fs...)
 
 	// Drivers
-	flags = append(flags, openstack.GenerateFlags()...)
+	// flags = append(flags, openstack.GetFlags()...)
 
 	return flags
 }
