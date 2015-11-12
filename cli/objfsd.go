@@ -19,6 +19,9 @@ func newCliApp() *cli.App {
 	app := cli.NewApp()
 	app.Name = "swiftfsd"
 	app.Version = "0.1alpha"
+	app.HideHelp = true
+	app.Author = "Hironobu Saitoh"
+	app.Email = "hiro@hironobu.org"
 
 	app.Flags = config.GetFlags()
 	app.Before = config.SetConfigFromContext
