@@ -177,3 +177,20 @@ func (c *SwiftClient) ListContainer() {
 		return true, nil
 	})
 }
+
+// -------------------
+
+func GenerateFlags() []cli.Flag {
+	flags := []cli.Flag{
+		cli.StringFlag{
+			Name:  "os-username",
+			Value: "",
+			Usage: "OpenStack Username",
+		},
+	}
+	return flags
+}
+
+func ValidateFlags(*cli.Context) error {
+	return nil
+}

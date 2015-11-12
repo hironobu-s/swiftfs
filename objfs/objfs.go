@@ -3,7 +3,6 @@ package objfs
 import (
 	"fmt"
 	"io/ioutil"
-
 	"os"
 
 	log "github.com/Sirupsen/logrus"
@@ -12,6 +11,7 @@ import (
 	"github.com/hanwen/go-fuse/fuse/pathfs"
 	"github.com/hironobu-s/objfs/drivers"
 	"github.com/hironobu-s/objfs/drivers/openstack"
+	"github.com/k0kubun/pp"
 )
 
 type objFs struct {
@@ -30,10 +30,26 @@ func NewObjFs(config *Config) *objFs {
 	return fs
 }
 
+func (fs *objFs) detectDeiver(name string) error {
+	switch name {
+	case "openstack":
+		config := &openstack.SwiftConfig{
+			ContainerName:  fs.config.ContainerName,
+			ObjectListSize: fs.config.ObjectListSize,
+		}
+
+		fs.driver = openstack.NewSwiftClient(config)
+		pp.Printf("%v", fs.driver)
+
+	default:
+		return fmt.Errorf("Driver \"%s\" not found.", name)
+	}
+	return nil
+}
+
 func (fs *objFs) Mount() (err error) {
 
-	fs.driver, err = fs.createDriver("openstack")
-	if err != nil {
+	if err = fs.detectDeiver(fs.config.DriverName); err != nil {
 		return err
 	}
 
@@ -52,22 +68,8 @@ func (fs *objFs) Mount() (err error) {
 	return nil
 }
 
-func (fs *objFs) createDriver(name string) (d drivers.Driver, err error) {
-	switch name {
-	case "openstack":
-		c := &openstack.SwiftConfig{
-			ContainerName:  fs.config.ContainerName,
-			ObjectListSize: fs.config.ObjectListSize,
-		}
-
-		d = openstack.NewSwiftClient(c)
-
-	default:
-		return nil, fmt.Errorf("Driver \"%s\" is not found.", name)
-	}
-
-	return d, nil
-}
+// func (fs *objFs) createDriver(name string) (d drivers.Driver, err error) {
+// }
 
 func (fs *objFs) buildObjectList() {
 	fs.objects = fs.driver.List()

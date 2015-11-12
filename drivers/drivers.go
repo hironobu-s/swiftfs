@@ -23,10 +23,12 @@ type Object struct {
 }
 
 type Driver interface {
-	//Containers() []Container
+	// GenerateFlags() []cli.Flag
+	// ValidateFlags(*cli.Context) error
+
 	Initialize() error
 	List() []*Object
-	Upload(name string, data io.ReadSeeker) error
-	Delete(name string) error
-	Get(name string) (*Object, error)
+	Upload(string, io.ReadSeeker) error
+	Delete(string) error
+	Get(string) (*Object, error)
 }
