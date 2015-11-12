@@ -151,6 +151,17 @@ func (c *SwiftClient) Get(name string) (obj *drivers.Object, err error) {
 	return obj, nil
 }
 
+func (c *SwiftClient) CreateContainer(name string) error {
+	opts := swiftcontainers.CreateOpts{}
+	result := swiftcontainers.Create(c.client, name, opts)
+	return result.Err
+}
+
+func (c *SwiftClient) DeleteContainer(name string) error {
+	result := swiftcontainers.Delete(c.client, name)
+	return result.Err
+}
+
 func (c *SwiftClient) ListContainer() {
 
 	pager := swiftcontainers.List(c.client, swiftcontainers.ListOpts{Full: true})
