@@ -19,12 +19,13 @@ type Object struct {
 }
 
 type DriverConfig interface {
-	GetFlags() []cli.Flag
-	SetConfigFromContext(*cli.Context) error
 }
 
 type Driver interface {
-	Initialize(DriverConfig) error
+	GetFlags() []cli.Flag
+	SetConfigFromContext(*cli.Context) error
+	Initialize() error
+
 	List() []*Object
 	Upload(string, io.ReadSeeker) error
 	Delete(string) error

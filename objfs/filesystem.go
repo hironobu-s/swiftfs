@@ -1,7 +1,6 @@
 package objfs
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 
@@ -10,54 +9,33 @@ import (
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"github.com/hanwen/go-fuse/fuse/pathfs"
 	"github.com/hironobu-s/objfs/drivers"
-	"github.com/hironobu-s/objfs/drivers/openstack"
 )
 
-type objFs struct {
-	config  *Config
-	driver  drivers.Driver
-	objects []*drivers.Object
+type fileSystem struct {
+	driver     drivers.Driver
+	mountPoint string
+	objects    []*drivers.Object
 
 	pathfs.FileSystem
 }
 
-func NewObjFs(config *Config) *objFs {
-	fs := &objFs{
-		config:     config,
+func NewFileSystem(driver drivers.Driver, mountpoint string) *fileSystem {
+	fs := &fileSystem{
+		mountPoint: mountpoint,
+		driver:     driver,
 		FileSystem: pathfs.NewDefaultFileSystem(),
 	}
 	return fs
 }
 
-func (fs *objFs) detectDeiver(name string) error {
+func (fs *fileSystem) Mount() (err error) {
 
-	var config drivers.DriverConfig
-
-	switch name {
-	case "openstack":
-		config = &openstack.SwiftConfig{}
-		fs.driver = openstack.NewSwiftClient()
-
-	default:
-		return fmt.Errorf("Driver \"%s\" not found.", name)
-	}
-
-	if err := fs.driver.Initialize(config); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (fs *objFs) Mount() (err error) {
-
-	if err = fs.detectDeiver(fs.config.DriverName); err != nil {
+	if err = fs.driver.Initialize(); err != nil {
 		return err
 	}
 
 	path := pathfs.NewPathNodeFs(fs, nil)
-
-	server, _, err := nodefs.MountRoot(fs.config.MountPoint, path.Root(), nil)
+	server, _, err := nodefs.MountRoot(fs.mountPoint, path.Root(), nil)
 	if err != nil {
 		return err
 	}
@@ -66,14 +44,14 @@ func (fs *objFs) Mount() (err error) {
 	return nil
 }
 
-// func (fs *objFs) createDriver(name string) (d drivers.Driver, err error) {
+// func (fs *fileSystem) createDriver(name string) (d drivers.Driver, err error) {
 // }
 
-func (fs *objFs) buildObjectList() {
+func (fs *fileSystem) buildObjectList() {
 	fs.objects = fs.driver.List()
 }
 
-func (fs *objFs) findObject(name string) *drivers.Object {
+func (fs *fileSystem) findObject(name string) *drivers.Object {
 	for _, obj := range fs.objects {
 		if obj.Name == name {
 			return obj
@@ -84,11 +62,11 @@ func (fs *objFs) findObject(name string) *drivers.Object {
 
 // ------------------------
 
-func (fs *objFs) String() string {
+func (fs *fileSystem) String() string {
 	return "objfs"
 }
 
-func (fs *objFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
+func (fs *fileSystem) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
 
 	var attr *fuse.Attr
 	if name == "" {
@@ -124,7 +102,7 @@ func (fs *objFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.S
 	}
 }
 
-func (fs *objFs) OpenDir(name string, context *fuse.Context) (c []fuse.DirEntry, code fuse.Status) {
+func (fs *fileSystem) OpenDir(name string, context *fuse.Context) (c []fuse.DirEntry, code fuse.Status) {
 	log.Debugf("OpenDir: %s", name)
 
 	entries := make([]fuse.DirEntry, len(fs.objects))
@@ -138,7 +116,7 @@ func (fs *objFs) OpenDir(name string, context *fuse.Context) (c []fuse.DirEntry,
 	return entries, fuse.OK
 }
 
-func (fs *objFs) Create(name string, flags uint32, mode uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
+func (fs *fileSystem) Create(name string, flags uint32, mode uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
 	log.Debugf("Create: %s, flags: %d", name, flags)
 
 	var err error
@@ -167,7 +145,7 @@ func (fs *objFs) Create(name string, flags uint32, mode uint32, context *fuse.Co
 	return file, fuse.OK
 }
 
-func (fs *objFs) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
+func (fs *fileSystem) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
 	log.Debugf("Open: %s, flags: %d", name, flags)
 
 	file, err := NewObjectFile(name, fs.driver)
@@ -179,7 +157,7 @@ func (fs *objFs) Open(name string, flags uint32, context *fuse.Context) (file no
 	return file, fuse.OK
 }
 
-func (fs *objFs) Unlink(name string, context *fuse.Context) (code fuse.Status) {
+func (fs *fileSystem) Unlink(name string, context *fuse.Context) (code fuse.Status) {
 	err := fs.driver.Delete(name)
 	if err != nil {
 		log.Debugf("Delete Error: %v", err)
