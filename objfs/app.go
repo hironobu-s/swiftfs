@@ -23,7 +23,7 @@ func NewApp() *cli.App {
 	}
 
 	app.Action = func(c *cli.Context) {
-		if c.Bool("help") {
+		if c.Bool("help") || len(c.Args()) == 0 {
 			cli.ShowAppHelp(c)
 			return
 		}
