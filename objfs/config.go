@@ -23,8 +23,6 @@ type Config struct {
 
 func NewConfig() *Config {
 	config := &Config{
-		MountPoint:     "tmp",
-		ContainerName:  "test-container",
 		ObjectListSize: 1000,
 	}
 
