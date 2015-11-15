@@ -18,6 +18,7 @@ func NewApp() *cli.App {
 	app.HideHelp = true
 	app.Author = "Hironobu Saitoh"
 	app.Email = "hiro@hironobu.org"
+	app.ArgsUsage = "container-name mountpoint"
 
 	config := NewConfig()
 	app.Flags = config.GetFlags()
@@ -27,7 +28,7 @@ func NewApp() *cli.App {
 	}
 
 	app.Action = func(c *cli.Context) {
-		if c.Bool("help") || len(c.Args()) == 0 {
+		if c.Bool("help") || len(c.Args()) < 2 {
 			cli.ShowAppHelp(c)
 			return
 		}

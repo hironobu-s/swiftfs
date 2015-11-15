@@ -2,7 +2,6 @@ package objfs
 
 import (
 	"fmt"
-	"strings"
 
 	"path/filepath"
 
@@ -82,7 +81,7 @@ func (c *Config) GetFlags() []cli.Flag {
 
 		cli.StringFlag{
 			Name:  "driver, d",
-			Value: "",
+			Value: "openstack",
 			Usage: "Driver name of object storage",
 		},
 
@@ -105,28 +104,15 @@ func (c *Config) GetFlags() []cli.Flag {
 func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 
 	c.Debug = ctx.Bool("debug")
-	c.MountPoint = ctx.String("mountpoint")
-	c.ContainerName = ctx.String("container-name")
+
 	c.Logfile = ctx.String("logfile")
 	driverName := ctx.String("driver")
 
-	// Validate required options
-	var requires = make([]string, 0, 3)
-	if c.MountPoint == "" {
-		requires = append(requires, "mountpoint")
-	}
+	// Container name
+	c.ContainerName = ctx.Args()[0]
 
-	if c.ContainerName == "" {
-		requires = append(requires, "container-name")
-	}
-
-	if driverName == "" {
-		requires = append(requires, "driver")
-	}
-
-	if len(requires) > 0 {
-		return fmt.Errorf("Some of required parameters are provided. [%s]", strings.Join(requires, ","))
-	}
+	// Mountpoint
+	c.MountPoint = ctx.Args()[1]
 
 	// Abs path of mountpoint
 	if c.MountPoint, err = filepath.Abs(c.MountPoint); err != nil {
