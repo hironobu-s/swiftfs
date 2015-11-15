@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"path/filepath"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
 	"github.com/hironobu-s/objfs/drivers"
@@ -13,6 +15,7 @@ import (
 type Config struct {
 	Debug          bool
 	NoDaemon       bool
+	Logfile        string
 	MountPoint     string
 	ContainerName  string
 	ObjectListSize int
@@ -58,7 +61,17 @@ func (c *Config) GetFlags() []cli.Flag {
 
 		cli.BoolFlag{
 			Name:  "debug",
-			Usage: "Debug mode.",
+			Usage: "Output more informations",
+		},
+
+		cli.BoolFlag{
+			Name:  "daemon",
+			Usage: "Run as a daemon mode. (default=true)",
+		},
+
+		cli.StringFlag{
+			Name:  "logfile, l",
+			Usage: "Logfile name",
 		},
 
 		cli.StringFlag{
@@ -94,6 +107,7 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 	c.Debug = ctx.Bool("debug")
 	c.MountPoint = ctx.String("mountpoint")
 	c.ContainerName = ctx.String("container-name")
+	c.Logfile = ctx.String("logfile")
 	driverName := ctx.String("driver")
 
 	// Validate required options
@@ -114,10 +128,17 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 		return fmt.Errorf("Some of required parameters are provided. [%s]", strings.Join(requires, ","))
 	}
 
+	// Abs path of mountpoint
+	if c.MountPoint, err = filepath.Abs(c.MountPoint); err != nil {
+		return err
+	}
+
+	// debug mode
 	if c.Debug {
 		log.SetLevel(log.DebugLevel)
 	}
 
+	//  load and detect drivers
 	c.loadDrivers()
 
 	d, ok := c.drivers[driverName]
