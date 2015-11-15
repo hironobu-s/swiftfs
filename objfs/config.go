@@ -118,7 +118,6 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	// Detect driver
 	c.loadDrivers()
 
 	d, ok := c.drivers[driverName]
