@@ -74,21 +74,9 @@ func (c *Config) GetFlags() []cli.Flag {
 		},
 
 		cli.StringFlag{
-			Name:  "mountpoint, m",
-			Value: "",
-			Usage: "The mount point for your file system.",
-		},
-
-		cli.StringFlag{
 			Name:  "driver, d",
 			Value: "openstack",
 			Usage: "Driver name of object storage",
-		},
-
-		cli.StringFlag{
-			Name:  "container-name, n",
-			Value: "",
-			Usage: "The container name.",
 		},
 	}
 	flags = append(flags, fs...)
