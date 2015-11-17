@@ -2,6 +2,7 @@ package objfs
 
 import (
 	"fmt"
+	"net/http"
 
 	"path/filepath"
 
@@ -108,10 +109,18 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 	if c.MountPoint, err = filepath.Abs(c.MountPoint); err != nil {
 		return err
 	}
+	log.Infof("Mount point: %s", c.MountPoint)
 
 	// Debug mode
 	if c.Debug {
+		log.Infof("Enable debug mode")
+
 		log.SetLevel(log.DebugLevel)
+
+		// Set LogTransport
+		http.DefaultTransport = &drivers.DebugTransport{
+			Transport: http.DefaultTransport,
+		}
 	}
 
 	//  Detect drivers
