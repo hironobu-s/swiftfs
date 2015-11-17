@@ -19,8 +19,9 @@ type Config struct {
 	ContainerName  string
 	ObjectListSize int
 
-	Driver  drivers.Driver
-	drivers map[string]drivers.Driver
+	Driver        drivers.Driver
+	drivers       map[string]drivers.Driver
+	driverConfigs map[string]drivers.DriverConfig
 }
 
 func NewConfig() *Config {
@@ -28,11 +29,13 @@ func NewConfig() *Config {
 		ObjectListSize: 1000,
 	}
 
+	config.loadDrivers()
 	return config
 }
 
 func (c *Config) loadDrivers() {
 	c.drivers = map[string]drivers.Driver{}
+	c.driverConfigs = map[string]drivers.DriverConfig{}
 
 	// TODO: Need driver auto detection.
 	names := []string{"openstack"}
@@ -40,7 +43,8 @@ func (c *Config) loadDrivers() {
 	for _, name := range names {
 		switch name {
 		case "openstack":
-			c.drivers[name] = openstack.NewSwift()
+			c.drivers[name] = &openstack.Swift{}
+			c.driverConfigs[name] = &openstack.SwiftConfig{}
 
 		default:
 			log.Warnf("Driver \"%s\" not found.", name)
@@ -70,29 +74,27 @@ func (c *Config) GetFlags() []cli.Flag {
 
 		cli.StringFlag{
 			Name:  "logfile, l",
-			Usage: "Logfile name",
+			Usage: "Append debug logs to logfile instead of stdout.",
 		},
 
 		cli.StringFlag{
 			Name:  "driver, d",
 			Value: "openstack",
-			Usage: "Driver name of object storage",
+			Usage: "Set driver name of Object Storage.",
 		},
 	}
 	flags = append(flags, fs...)
 
 	// Merge driver-specific options
-	for _, d := range c.drivers {
-		flags = append(flags, d.GetFlags()...)
+	for _, config := range c.driverConfigs {
+		flags = append(flags, config.GetFlags()...)
 	}
 
 	return flags
 }
 
 func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
-
 	c.Debug = ctx.Bool("debug")
-
 	c.Logfile = ctx.String("logfile")
 	driverName := ctx.String("driver")
 
@@ -107,21 +109,27 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 		return err
 	}
 
-	// debug mode
+	// Debug mode
 	if c.Debug {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	//  load and detect drivers
-	c.loadDrivers()
-
-	d, ok := c.drivers[driverName]
+	//  Detect drivers
+	var ok bool
+	c.Driver, ok = c.drivers[driverName]
 	if !ok {
 		return fmt.Errorf("Driver \"%s\" not found.", driverName)
 	}
-	c.Driver = d
 
-	c.Driver.SetConfigFromContext(ctx)
+	// Set driver config
+	config, ok := c.driverConfigs[driverName]
+	if !ok {
+		return fmt.Errorf("DriverConfig \"%s\" not found.", driverName)
+	}
+	if err = config.SetConfigFromContext(ctx); err != nil {
+		return err
+	}
+	c.Driver.SetConfig(config)
 
 	return nil
 }

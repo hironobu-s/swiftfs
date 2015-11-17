@@ -39,10 +39,10 @@ func NewApp() *cli.App {
 			return
 		}
 
-		if err = daemonize(c, config); err != nil {
-			log.Warnf("%v", err)
-			return
-		}
+		// if err = daemonize(c, config); err != nil {
+		// 	log.Warnf("%v", err)
+		// 	return
+		// }
 
 		fs := NewFileSystem(config.Driver, config.MountPoint)
 		if err = fs.Mount(); err != nil {
@@ -54,7 +54,6 @@ func NewApp() *cli.App {
 }
 
 func daemonize(c *cli.Context, config *Config) (err error) {
-
 	// logfile
 	var logfile *os.File
 	if config.Logfile != "" {

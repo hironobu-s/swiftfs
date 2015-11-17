@@ -29,8 +29,7 @@ func NewFileSystem(driver drivers.Driver, mountpoint string) *fileSystem {
 }
 
 func (fs *fileSystem) Mount() (err error) {
-
-	if err = fs.driver.Initialize(); err != nil {
+	if err = fs.driver.Auth(); err != nil {
 		return err
 	}
 
