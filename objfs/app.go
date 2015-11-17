@@ -33,16 +33,18 @@ func NewApp() *cli.App {
 			return
 		}
 
+		log.Info("Start ObjFs...")
+
 		var err error
 		if err = config.SetConfigFromContext(c); err != nil {
 			log.Warnf("%v", err)
 			return
 		}
 
-		// if err = daemonize(c, config); err != nil {
-		// 	log.Warnf("%v", err)
-		// 	return
-		// }
+		if err = daemonize(c, config); err != nil {
+			log.Warnf("%v", err)
+			return
+		}
 
 		fs := NewFileSystem(config.Driver, config.MountPoint)
 		if err = fs.Mount(); err != nil {
@@ -57,6 +59,9 @@ func daemonize(c *cli.Context, config *Config) (err error) {
 	// logfile
 	var logfile *os.File
 	if config.Logfile != "" {
+
+		log.Infof("Append info/debug logs to %s", config.Logfile)
+
 		logfile, err = os.OpenFile(config.Logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
 			return err
@@ -65,6 +70,9 @@ func daemonize(c *cli.Context, config *Config) (err error) {
 	defer logfile.Close()
 
 	if !c.Bool("daemon") {
+
+		log.Infof("Daemonizing")
+
 		args := []string{
 			"--daemon",
 		}
@@ -75,6 +83,7 @@ func daemonize(c *cli.Context, config *Config) (err error) {
 		os.Exit(0)
 
 	} else {
+
 		// Write some outputs to the logfile if provided
 		if logfile != nil {
 			log.SetFormatter(&log.TextFormatter{

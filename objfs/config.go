@@ -47,6 +47,8 @@ func (c *Config) loadDrivers() {
 			c.drivers[name] = &openstack.Swift{}
 			c.driverConfigs[name] = &openstack.SwiftConfig{}
 
+			log.Infof("Load driver: %s", name)
+
 		default:
 			log.Warnf("Driver \"%s\" not found.", name)
 			continue
@@ -101,6 +103,7 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 
 	// Container name
 	c.ContainerName = ctx.Args()[0]
+	log.Infof("Container name: %s", c.ContainerName)
 
 	// Mountpoint
 	c.MountPoint = ctx.Args()[1]
@@ -129,6 +132,7 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 	if !ok {
 		return fmt.Errorf("Driver \"%s\" not found.", driverName)
 	}
+	log.Infof("%s driver detected", driverName)
 
 	// Set driver config
 	config, ok := c.driverConfigs[driverName]
@@ -139,6 +143,8 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 		return err
 	}
 	c.Driver.SetConfig(config)
+
+	log.Infof("Initialize driver config")
 
 	return nil
 }

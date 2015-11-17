@@ -43,9 +43,6 @@ func (fs *fileSystem) Mount() (err error) {
 	return nil
 }
 
-// func (fs *fileSystem) createDriver(name string) (d drivers.Driver, err error) {
-// }
-
 func (fs *fileSystem) buildObjectList() {
 	fs.objects = fs.driver.List()
 }
