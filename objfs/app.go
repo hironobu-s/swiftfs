@@ -81,13 +81,8 @@ func lockfile() string {
 }
 
 func daemonize(c *cli.Context, config *Config) (err error) {
-
-	pgid, err := syscall.Getpgid(syscall.Getpid())
-	if err != nil {
-		return err
-	}
-
-	if pgid != syscall.Getppid() {
+	// TODO: これでOK?
+	if _, err = os.Stat(lockfile()); err == nil {
 		// Child process
 		return nil
 	}
