@@ -130,6 +130,11 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 
 	} else {
 		c.Logfile = nil
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp:    true,
+			DisableTimestamp: false,
+			TimestampFormat:  "Jan 02 15:04:05",
+		})
 	}
 
 	// Container name
