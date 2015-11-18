@@ -41,9 +41,11 @@ func Run() {
 			return
 		}
 
-		if err = daemonize(c, config); err != nil {
-			log.Warnf("%v", err)
-			return
+		if !config.NoDaemon {
+			if err = daemonize(c, config); err != nil {
+				log.Warnf("%v", err)
+				return
+			}
 		}
 
 		log.Debug("Create a filesystem")
@@ -53,13 +55,19 @@ func Run() {
 		server, err := fs.Mount()
 		if err != nil {
 			log.Warnf("%v", err)
-			afterDaemonize()
+
+			if !config.NoDaemon {
+				afterDaemonize()
+			}
 			return
 		}
 
-		log.Debugf("ObjFS daemon process with pid %d started", syscall.Getpid())
+		log.Debugf("ObjFS process with pid %d started", syscall.Getpid())
 
-		afterDaemonize()
+		if !config.NoDaemon {
+			afterDaemonize()
+		}
+
 		server.Serve()
 
 		log.Debug("Shutdown")

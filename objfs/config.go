@@ -69,8 +69,8 @@ func (c *Config) GetFlags() []cli.Flag {
 		},
 
 		cli.BoolFlag{
-			Name:  "daemon",
-			Usage: "Run as a daemon mode. (default=true)",
+			Name:  "no-daemon",
+			Usage: "Start as a foreground job (for debugging)",
 		},
 
 		cli.StringFlag{
@@ -142,6 +142,9 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 		return err
 	}
 	log.Debugf("Mount point: %s", c.MountPoint)
+
+	// No daemon mode
+	c.NoDaemon = ctx.Bool("no-daemon")
 
 	//  Detect drivers
 	driverName := ctx.String("driver")
