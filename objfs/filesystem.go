@@ -28,19 +28,18 @@ func NewFileSystem(driver drivers.Driver, mountpoint string) *fileSystem {
 	return fs
 }
 
-func (fs *fileSystem) Mount() (err error) {
+func (fs *fileSystem) Mount() (server *fuse.Server, err error) {
 	if err = fs.driver.Auth(); err != nil {
-		return err
+		return nil, err
 	}
 
 	path := pathfs.NewPathNodeFs(fs, nil)
-	server, _, err := nodefs.MountRoot(fs.mountPoint, path.Root(), nil)
+	server, _, err = nodefs.MountRoot(fs.mountPoint, path.Root(), nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	server.Serve()
-	return nil
+	return server, nil
 }
 
 func (fs *fileSystem) buildObjectList() {

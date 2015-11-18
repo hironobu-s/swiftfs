@@ -3,6 +3,7 @@ package objfs
 import (
 	"fmt"
 	"net/http"
+	"os"
 
 	"path/filepath"
 
@@ -15,7 +16,7 @@ import (
 type Config struct {
 	Debug          bool
 	NoDaemon       bool
-	Logfile        string
+	Logfile        *os.File // Need close() after use
 	MountPoint     string
 	ContainerName  string
 	ObjectListSize int
@@ -47,14 +48,11 @@ func (c *Config) loadDrivers() {
 			c.drivers[name] = &openstack.Swift{}
 			c.driverConfigs[name] = &openstack.SwiftConfig{}
 
-			log.Infof("Load driver: %s", name)
+			log.Debugf("Load driver: %s", name)
 
 		default:
 			log.Warnf("Driver \"%s\" not found.", name)
-			continue
 		}
-
-		log.Debugf("Driver \"%s\" loaded.", name)
 	}
 }
 
@@ -97,42 +95,63 @@ func (c *Config) GetFlags() []cli.Flag {
 }
 
 func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
-	c.Debug = ctx.Bool("debug")
-	c.Logfile = ctx.String("logfile")
-	driverName := ctx.String("driver")
-
-	// Container name
-	c.ContainerName = ctx.Args()[0]
-	log.Infof("Container name: %s", c.ContainerName)
-
-	// Mountpoint
-	c.MountPoint = ctx.Args()[1]
-
-	// Abs path of mountpoint
-	if c.MountPoint, err = filepath.Abs(c.MountPoint); err != nil {
-		return err
-	}
-	log.Infof("Mount point: %s", c.MountPoint)
 
 	// Debug mode
+	c.Debug = ctx.Bool("debug")
 	if c.Debug {
-		log.Infof("Enable debug mode")
-
 		log.SetLevel(log.DebugLevel)
 
 		// Set LogTransport
 		http.DefaultTransport = &drivers.DebugTransport{
 			Transport: http.DefaultTransport,
 		}
+
+	} else {
+		log.SetLevel(log.WarnLevel)
 	}
 
+	// logfile
+	var logfile = ctx.String("logfile")
+	if logfile != "" {
+		f, err := os.OpenFile(logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		c.Logfile = f
+
+		log.SetFormatter(&log.TextFormatter{
+			DisableColors:    true,
+			DisableTimestamp: true,
+			DisableSorting:   true,
+		})
+		log.SetOutput(f)
+
+		log.Debugf(" to %s", logfile)
+
+	} else {
+		c.Logfile = nil
+	}
+
+	// Container name
+	c.ContainerName = ctx.Args()[0]
+	log.Debugf("Container name: %s", c.ContainerName)
+
+	// Mountpoint
+	c.MountPoint = ctx.Args()[1]
+	if c.MountPoint, err = filepath.Abs(c.MountPoint); err != nil {
+		return err
+	}
+	log.Debugf("Mount point: %s", c.MountPoint)
+
 	//  Detect drivers
+	driverName := ctx.String("driver")
+
 	var ok bool
 	c.Driver, ok = c.drivers[driverName]
 	if !ok {
 		return fmt.Errorf("Driver \"%s\" not found.", driverName)
 	}
-	log.Infof("%s driver detected", driverName)
+	log.Debugf("%s driver detected", driverName)
 
 	// Set driver config
 	config, ok := c.driverConfigs[driverName]
@@ -144,7 +163,7 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 	}
 	c.Driver.SetConfig(config)
 
-	log.Infof("Initialize driver config")
+	log.Debugf("Initialize driver config")
 
 	return nil
 }

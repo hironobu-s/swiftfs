@@ -3,13 +3,17 @@ package objfs
 import (
 	"os"
 	"os/exec"
+	"os/signal"
+	"path"
 	"syscall"
+
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
 )
 
-func NewApp() *cli.App {
+func Run() {
 	app := cli.NewApp()
 
 	app.Name = "objfs"
@@ -21,19 +25,15 @@ func NewApp() *cli.App {
 	app.ArgsUsage = "container-name mountpoint"
 
 	config := NewConfig()
-	app.Flags = config.GetFlags()
+	defer config.Logfile.Close()
 
-	app.Before = func(c *cli.Context) (err error) {
-		return nil
-	}
+	app.Flags = config.GetFlags()
 
 	app.Action = func(c *cli.Context) {
 		if c.Bool("help") || len(c.Args()) < 2 {
 			cli.ShowAppHelp(c)
 			return
 		}
-
-		log.Info("Start ObjFs...")
 
 		var err error
 		if err = config.SetConfigFromContext(c); err != nil {
@@ -46,71 +46,104 @@ func NewApp() *cli.App {
 			return
 		}
 
+		log.Debug("Create a filesystem")
 		fs := NewFileSystem(config.Driver, config.MountPoint)
-		if err = fs.Mount(); err != nil {
+
+		log.Debug("Mount a filesystem")
+		server, err := fs.Mount()
+		if err != nil {
 			log.Warnf("%v", err)
+			afterDaemonize()
+			return
 		}
+
+		log.Debugf("ObjFS daemon process with pid %d started", syscall.Getpid())
+
+		afterDaemonize()
+		server.Serve()
+
+		log.Debug("Shutdown")
 	}
 
-	return app
+	app.RunAndExitOnError()
+}
+
+func lockfile() string {
+	return path.Join(os.TempDir(), ".objfs-startup")
 }
 
 func daemonize(c *cli.Context, config *Config) (err error) {
-	// logfile
-	var logfile *os.File
-	if config.Logfile != "" {
 
-		log.Infof("Append info/debug logs to %s", config.Logfile)
-
-		logfile, err = os.OpenFile(config.Logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-		if err != nil {
-			return err
-		}
+	pgid, err := syscall.Getpgid(syscall.Getpid())
+	if err != nil {
+		return err
 	}
-	defer logfile.Close()
 
-	if !c.Bool("daemon") {
+	if pgid != syscall.Getppid() {
+		// Child process
+		return nil
+	}
 
-		log.Infof("Daemonizing")
+	// Create a lockfile
+	log.Debug("Create a lockfile")
+	f, err := os.OpenFile(lockfile(), os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	f.Close()
 
-		args := []string{
-			"--daemon",
+	// Spawn a daemon process
+	log.Debug("Spawn a daemon process")
+	cmd := exec.Command(os.Args[0], os.Args[1:]...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	cmd.Start()
+
+	// Wait 10 seconds for lunching a child process.
+	i := 0
+	ok := false
+	for i < 10 {
+		if _, err = os.Stat(lockfile()); err != nil {
+			// Child process has been started successfully
+			ok = true
+			break
 		}
-		args = append(args, os.Args[1:]...)
 
-		cmd := exec.Command(os.Args[0], args...)
-		cmd.Start()
+		log.Debug("Wait starting a daemon process")
+
+		time.Sleep(500 * time.Millisecond)
+		i++
+	}
+
+	// Exit parent process
+	if ok {
 		os.Exit(0)
-
 	} else {
-
-		// Write some outputs to the logfile if provided
-		if logfile != nil {
-			log.SetFormatter(&log.TextFormatter{
-				DisableColors:    true,
-				DisableTimestamp: true,
-				DisableSorting:   true,
-			})
-
-			syscall.Dup2(int(logfile.Fd()), 1)
-			syscall.Dup2(int(logfile.Fd()), 2)
-
-			log.SetOutput(logfile)
-		}
-
-		// close STDOUT, STDIN, STDERR
-		syscall.CloseOnExec(0)
-		syscall.CloseOnExec(1)
-		syscall.CloseOnExec(2)
-
-		// become the process group leader
-		syscall.Setsid()
-
-		// clear umask
-		syscall.Umask(022)
-
-		// chdir for root directory
-		syscall.Chdir("/")
+		log.Warn("ObjFs daemon failed to start")
+		os.Exit(1)
 	}
 	return nil
+}
+
+func afterDaemonize() {
+	// Ignore SIGCHLD signal
+	signal.Ignore(syscall.SIGCHLD)
+
+	// Close STDOUT, STDIN, STDERR
+	syscall.Close(0)
+	syscall.Close(1)
+	syscall.Close(2)
+
+	// Become the process group leader
+	syscall.Setsid()
+
+	// Clear umask
+	syscall.Umask(022)
+
+	// chdir for root directory
+	syscall.Chdir("/")
+
+	// Remove lock file
+	log.Debug("Delete a lockfile")
+	os.Remove(lockfile())
 }
