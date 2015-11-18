@@ -119,11 +119,7 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 		}
 		c.Logfile = f
 
-		log.SetFormatter(&log.TextFormatter{
-			DisableColors:    true,
-			DisableTimestamp: true,
-			DisableSorting:   true,
-		})
+		log.SetFormatter(&LogfileFormatter{})
 		log.SetOutput(f)
 
 		log.Debugf(" to %s", logfile)
