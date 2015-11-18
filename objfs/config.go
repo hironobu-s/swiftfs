@@ -75,13 +75,13 @@ func (c *Config) GetFlags() []cli.Flag {
 
 		cli.StringFlag{
 			Name:  "logfile, l",
-			Usage: "Append debug logs to logfile instead of stdout.",
+			Usage: "Append some informations to logfile instead of stdout/stderr",
 		},
 
 		cli.StringFlag{
 			Name:  "driver, d",
 			Value: "openstack",
-			Usage: "Set driver name of Object Storage.",
+			Usage: "Set driver name of Object Storage",
 		},
 	}
 	flags = append(flags, fs...)
