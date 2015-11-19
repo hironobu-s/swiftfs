@@ -39,7 +39,7 @@ func (c *Config) loadDrivers() {
 	c.drivers = map[string]drivers.Driver{}
 	c.driverConfigs = map[string]drivers.DriverConfig{}
 
-	// TODO: Need driver auto detection.
+	// TODO: driver auto detection.
 	names := []string{"openstack"}
 
 	for _, name := range names {
@@ -65,23 +65,23 @@ func (c *Config) GetFlags() []cli.Flag {
 
 		cli.BoolFlag{
 			Name:  "debug",
-			Usage: "Output more informations",
+			Usage: "Output debug information",
 		},
 
 		cli.BoolFlag{
 			Name:  "no-daemon",
-			Usage: "Start as a foreground job (for debugging)",
+			Usage: "Start an objfs process as a foreground (for debugging)",
 		},
 
 		cli.StringFlag{
 			Name:  "logfile, l",
-			Usage: "Append some informations to logfile instead of stdout/stderr",
+			Usage: "The logfile name that appends some information instead of stdout/stderr",
 		},
 
 		cli.StringFlag{
 			Name:  "driver, d",
 			Value: "openstack",
-			Usage: "Set driver name of Object Storage",
+			Usage: "The driver name of the Object Storage (currently, the only supported driver is \"openstack\")",
 		},
 	}
 	flags = append(flags, fs...)
