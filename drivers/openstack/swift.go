@@ -21,32 +21,32 @@ func (c *SwiftConfig) GetFlags() []cli.Flag {
 		cli.StringFlag{
 			Name:  "os-user-id",
 			Value: "",
-			Usage: "[OpenStack] User ID",
+			Usage: "(OpenStack) User ID",
 		},
 		cli.StringFlag{
 			Name:  "os-username",
 			Value: "",
-			Usage: "[OpenStack] Username",
+			Usage: "(OpenStack) Username",
 		},
 		cli.StringFlag{
 			Name:  "os-password",
 			Value: "",
-			Usage: "[OpenStack] Password",
+			Usage: "(OpenStack) Password",
 		},
 		cli.StringFlag{
 			Name:  "os-tenant-id",
 			Value: "",
-			Usage: "[OpenStack] Tenant Id",
+			Usage: "(OpenStack) Tenant Id",
 		},
 		cli.StringFlag{
 			Name:  "os-tenant-name",
 			Value: "",
-			Usage: "[OpenStack] Tenant Name",
+			Usage: "(OpenStack) Tenant Name",
 		},
 		cli.StringFlag{
 			Name:  "os-auth-url",
 			Value: "",
-			Usage: "[OpenStack] Auth URL",
+			Usage: "(OpenStack) Auth URL",
 		},
 	}
 	return flags
@@ -110,7 +110,7 @@ func (s *Swift) SetConfig(config drivers.DriverConfig) (err error) {
 	}
 
 	if os.Getenv("OS_AUTH_URL") != "" {
-		log.Debugf("[OpenStack] Use auth parameters in ENV.")
+		log.Debugf("(OpenStack) Use auth parameters in ENV.")
 
 		s.authOptions, err = openstack.AuthOptionsFromEnv()
 		if err != nil {
@@ -118,7 +118,7 @@ func (s *Swift) SetConfig(config drivers.DriverConfig) (err error) {
 		}
 
 	} else {
-		log.Debugf("[OpenStack] Use auth parameters via command-line options.")
+		log.Debugf("(OpenStack) Use auth parameters via command-line options.")
 
 		s.authOptions = gophercloud.AuthOptions{
 			IdentityEndpoint: c.IdentityEndpoint,
@@ -142,9 +142,9 @@ func (s *Swift) SetConfig(config drivers.DriverConfig) (err error) {
 func (s *Swift) Auth() error {
 
 	if s.authOptions.Username != "" {
-		log.Debugf("[OpenStack] Authenticating by username(%s)", s.authOptions.Username)
+		log.Debugf("(OpenStack) Authenticating by username(%s)", s.authOptions.Username)
 	} else {
-		log.Debugf("[OpenStack] Authenticating by user-id(%s)", s.authOptions.UserID)
+		log.Debugf("(OpenStack) Authenticating by user-id(%s)", s.authOptions.UserID)
 	}
 
 	provider, err := openstack.AuthenticatedClient(s.authOptions)
@@ -202,7 +202,7 @@ func (s *Swift) List() (objects []*drivers.Object) {
 		return true, nil
 	})
 
-	log.Debugf("[OpenStack] Fetch object list. number of objects is %d.", i)
+	log.Debugf("(OpenStack) Fetch object list. number of objects is %d.", i)
 	return objects
 }
 
@@ -224,7 +224,7 @@ func (s *Swift) Get(name string) (obj *drivers.Object, err error) {
 
 	opts := swiftobjects.DownloadOpts{}
 
-	log.Debugf("[OpenStack] Download object named \"%s\"", name)
+	log.Debugf("(OpenStack) Download object named \"%s\"", name)
 
 	result := swiftobjects.Download(s.client, s.containerName, name, opts)
 	if result.Err != nil {
