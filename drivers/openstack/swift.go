@@ -83,8 +83,8 @@ func (c *SwiftConfig) SetConfigFromContext(ctx *cli.Context) error {
 		return fmt.Errorf("Container name was not provided.")
 	}
 
-	// Default 10000
-	c.ObjectListSize = 10000
+	// Default 1000
+	c.ObjectListSize = 1000
 
 	return nil
 }
