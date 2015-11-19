@@ -4,14 +4,9 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
-
-	"flag"
-
-	"github.com/codegangsta/cli"
-	"github.com/hironobu-s/objfs/drivers/openstack"
 )
 
-var client *openstack.Swift
+var client *Swift
 
 const (
 	TEST_CONTAINER_NAME = "objfs-test"
@@ -20,28 +15,18 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	app := cli.NewApp()
-	// f := flag.NewFlagSet("swifttest", flag.ExitOnError)
-	// f.Set("container-name", TEST_CONTAINER_NAME)
-
-	// logrus.SetLevel(logrus.DebugLevel)
-
 	var err error
 
-	client := openstack.NewSwift()
+	config := &SwiftConfig{
+		ContainerName: TEST_CONTAINER_NAME,
+	}
 
-	fs := flag.NewFlagSet("swift", flag.ExitOnError)
-	// for _, f := range client.GetFlags() {
-	// 	f.Apply(fs)
-	// }
-
-	ctx := cli.NewContext(app, fs, nil)
-
-	if err = client.SetConfigFromContext(ctx); err != nil {
+	client = &Swift{}
+	if err = client.SetConfig(config); err != nil {
 		panic(err)
 	}
 
-	if err = client.Initialize(); err != nil {
+	if err = client.Auth(); err != nil {
 		panic(err)
 	}
 
@@ -72,53 +57,53 @@ func TestUpload(t *testing.T) {
 	}
 }
 
-// func TestGet(t *testing.T) {
-// 	obj, err := client.Get(TEST_OBJECT_NAME)
-// 	if err != nil {
-// 		t.Errorf("%v", err)
-// 	}
-// 	defer obj.Body.Close()
+func TestGet(t *testing.T) {
+	obj, err := client.Get(TEST_OBJECT_NAME)
+	if err != nil {
+		t.Errorf("%v", err)
+	}
+	defer obj.Body.Close()
 
-// 	body, err := ioutil.ReadAll(obj.Body)
-// 	if err != nil {
-// 		t.Errorf("%v", err)
-// 	}
+	body, err := ioutil.ReadAll(obj.Body)
+	if err != nil {
+		t.Errorf("%v", err)
+	}
 
-// 	if string(body) != TEST_OBJECT_DATA {
-// 		t.Errorf("Invalid object data (It's different from uploaded).")
-// 	}
-// }
+	if string(body) != TEST_OBJECT_DATA {
+		t.Errorf("Invalid object data (It's different from uploaded).")
+	}
+}
 
-// func TestList(t *testing.T) {
-// 	objects := client.List()
+func TestList(t *testing.T) {
+	objects := client.List()
 
-// 	exists := false
-// 	for _, obj := range objects {
-// 		if obj.Name == TEST_OBJECT_NAME {
-// 			exists = true
-// 			break
-// 		}
-// 	}
-// 	if !exists {
-// 		t.Errorf("Object not found. (upload failed?)")
-// 	}
-// }
+	exists := false
+	for _, obj := range objects {
+		if obj.Name == TEST_OBJECT_NAME {
+			exists = true
+			break
+		}
+	}
+	if !exists {
+		t.Errorf("Object not found. (upload failed?)")
+	}
+}
 
-// func TestDelete(t *testing.T) {
-// 	if err := client.Delete(TEST_OBJECT_NAME); err != nil {
-// 		t.Errorf("%v", err)
-// 	}
+func TestDelete(t *testing.T) {
+	if err := client.Delete(TEST_OBJECT_NAME); err != nil {
+		t.Errorf("%v", err)
+	}
 
-// 	objects := client.List()
+	objects := client.List()
 
-// 	exists := false
-// 	for _, obj := range objects {
-// 		if obj.Name == TEST_OBJECT_NAME {
-// 			exists = true
-// 			break
-// 		}
-// 	}
-// 	if exists {
-// 		t.Errorf("Delete Failed.")
-// 	}
-// }
+	exists := false
+	for _, obj := range objects {
+		if obj.Name == TEST_OBJECT_NAME {
+			exists = true
+			break
+		}
+	}
+	if exists {
+		t.Errorf("Delete Failed.")
+	}
+}
