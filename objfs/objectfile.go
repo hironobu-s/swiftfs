@@ -31,8 +31,6 @@ type ObjectFile struct {
 
 func NewObjectFile(name string, driver drivers.Driver) (*ObjectFile, error) {
 
-	//tmpfile := path.Join(os.TempDir(), "swiftfs-"+name)
-	//f, err := os.OpenFile(tmpfile, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
 	f, err := ioutil.TempFile("", "objfs-"+name)
 	if err != nil {
 		return nil, err
