@@ -32,4 +32,8 @@ type Driver interface {
 	Get(string) (*Object, error)
 	Upload(string, io.ReadSeeker) error
 	Delete(string) error
+
+	HasContainer() (bool, error)
+	CreateContainer() error
+	DeleteContainer() error
 }

@@ -14,12 +14,13 @@ import (
 )
 
 type Config struct {
-	Debug          bool
-	NoDaemon       bool
-	Logfile        *os.File // Need close() after use
-	MountPoint     string
-	ContainerName  string
-	ObjectListSize int
+	Debug           bool
+	NoDaemon        bool
+	Logfile         *os.File // Need close() after use
+	MountPoint      string
+	ContainerName   string
+	CreateContainer bool
+	ObjectListSize  int
 
 	Driver        drivers.Driver
 	drivers       map[string]drivers.Driver
@@ -83,6 +84,11 @@ func (c *Config) GetFlags() []cli.Flag {
 			Value: "openstack",
 			Usage: "The driver name of the Object Storage (currently, the only supported driver is \"openstack\")",
 		},
+
+		cli.BoolFlag{
+			Name:  "create-container, c",
+			Usage: "Create a container if is not exist",
+		},
 	}
 	flags = append(flags, fs...)
 
@@ -132,6 +138,9 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 			TimestampFormat:  "Jan 02 15:04:05",
 		})
 	}
+
+	// Create Container
+	c.CreateContainer = ctx.Bool("create-container")
 
 	// Container name
 	c.ContainerName = ctx.Args()[0]

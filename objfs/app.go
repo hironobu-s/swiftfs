@@ -49,7 +49,7 @@ func Run() {
 		}
 
 		log.Debug("Create a filesystem")
-		fs := NewFileSystem(config.Driver, config.MountPoint)
+		fs := NewFileSystem(config)
 
 		log.Debug("Mount a filesystem")
 		server, err := fs.Mount()

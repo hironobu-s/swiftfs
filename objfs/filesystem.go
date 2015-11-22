@@ -1,6 +1,7 @@
 package objfs
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 
@@ -12,18 +13,22 @@ import (
 )
 
 type fileSystem struct {
-	driver     drivers.Driver
-	mountPoint string
-	objects    []*drivers.Object
+	driver          drivers.Driver
+	mountPoint      string
+	containerName   string
+	createContainer bool
+	objects         []*drivers.Object
 
 	pathfs.FileSystem
 }
 
-func NewFileSystem(driver drivers.Driver, mountpoint string) *fileSystem {
+func NewFileSystem(config *Config) *fileSystem {
 	fs := &fileSystem{
-		mountPoint: mountpoint,
-		driver:     driver,
-		FileSystem: pathfs.NewDefaultFileSystem(),
+		mountPoint:      config.MountPoint,
+		driver:          config.Driver,
+		containerName:   config.ContainerName,
+		createContainer: config.CreateContainer,
+		FileSystem:      pathfs.NewDefaultFileSystem(),
 	}
 	return fs
 }
@@ -31,6 +36,20 @@ func NewFileSystem(driver drivers.Driver, mountpoint string) *fileSystem {
 func (fs *fileSystem) Mount() (server *fuse.Server, err error) {
 	if err = fs.driver.Auth(); err != nil {
 		return nil, err
+	}
+
+	if fs.createContainer {
+		if err = fs.driver.CreateContainer(); err != nil {
+			return nil, err
+		}
+
+	} else {
+		has, err := fs.driver.HasContainer()
+		if err != nil {
+			return nil, err
+		} else if !has {
+			return nil, fmt.Errorf("Container \"%s\" not found", fs.containerName)
+		}
 	}
 
 	path := pathfs.NewPathNodeFs(fs, nil)

@@ -246,14 +246,40 @@ func (s *Swift) Get(name string) (obj *drivers.Object, err error) {
 	return obj, nil
 }
 
-func (s *Swift) CreateContainer(name string) error {
+func (s *Swift) HasContainer() (bool, error) {
+	opts := swiftcontainers.ListOpts{}
+	pager := swiftcontainers.List(s.client, opts)
+	if pager.Err != nil {
+		return false, pager.Err
+	}
+
+	has := false
+	pager.EachPage(func(page pagination.Page) (bool, error) {
+		names, err := swiftcontainers.ExtractNames(page)
+		if err != nil {
+			return false, err
+		}
+
+		for _, name := range names {
+			if name == s.containerName {
+				has = true
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+
+	return has, nil
+}
+
+func (s *Swift) CreateContainer() error {
 	opts := swiftcontainers.CreateOpts{}
-	result := swiftcontainers.Create(s.client, name, opts)
+	result := swiftcontainers.Create(s.client, s.containerName, opts)
 	return result.Err
 }
 
-func (s *Swift) DeleteContainer(name string) error {
-	result := swiftcontainers.Delete(s.client, name)
+func (s *Swift) DeleteContainer() error {
+	result := swiftcontainers.Delete(s.client, s.containerName)
 	return result.Err
 }
 
