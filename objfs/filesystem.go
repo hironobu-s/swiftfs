@@ -17,7 +17,7 @@ type fileSystem struct {
 	mountPoint      string
 	containerName   string
 	createContainer bool
-	objects         []*drivers.Object
+	objects         []drivers.Object
 
 	pathfs.FileSystem
 }
@@ -68,7 +68,7 @@ func (fs *fileSystem) buildObjectList() {
 func (fs *fileSystem) findObject(name string) *drivers.Object {
 	for _, obj := range fs.objects {
 		if obj.Name == name {
-			return obj
+			return &obj
 		}
 	}
 	return nil
@@ -81,7 +81,6 @@ func (fs *fileSystem) String() string {
 }
 
 func (fs *fileSystem) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
-
 	var attr *fuse.Attr
 	if name == "" {
 

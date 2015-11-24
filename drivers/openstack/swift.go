@@ -160,13 +160,13 @@ func (s *Swift) Auth() error {
 	return nil
 }
 
-func (s *Swift) List() (objects []*drivers.Object) {
+func (s *Swift) List() (objects []drivers.Object) {
 
 	pager := swiftobjects.List(s.client, s.containerName, swiftobjects.ListOpts{
 		Full: true,
 	})
 
-	objects = make([]*drivers.Object, s.objectListSize)
+	objects = make([]drivers.Object, s.objectListSize)
 	var i = 0
 	pager.EachPage(func(page pagination.Page) (bool, error) {
 		objlist, err := swiftobjects.ExtractInfo(page)
@@ -188,14 +188,12 @@ func (s *Swift) List() (objects []*drivers.Object) {
 				lastmodified = time.Now()
 			}
 
-			obj := &drivers.Object{
+			objects = append(objects, drivers.Object{
 				Name:         o.Name,
 				Body:         nil,
 				Size:         uint64(o.Bytes),
 				LastModified: lastmodified,
-			}
-
-			objects = append(objects, obj)
+			})
 			i++
 		}
 
@@ -220,28 +218,26 @@ func (s *Swift) Delete(name string) error {
 	return result.Err
 }
 
-func (s *Swift) Get(name string) (obj *drivers.Object, err error) {
+func (s *Swift) Get(name string) (obj drivers.Object, err error) {
 
-	opts := swiftobjects.DownloadOpts{}
+	obj = drivers.Object{}
 
 	log.Debugf("(OpenStack) Download object named \"%s\"", name)
-
+	opts := swiftobjects.DownloadOpts{}
 	result := swiftobjects.Download(s.client, s.containerName, name, opts)
 	if result.Err != nil {
-		return nil, err
+		return obj, err
 	}
 
 	headers, err := result.Extract()
 	if err != nil {
-		return nil, err
+		return obj, err
 	}
 
-	obj = &drivers.Object{
-		Name:         name,
-		Body:         result.Body,
-		Size:         uint64(headers.ContentLength),
-		LastModified: headers.LastModified,
-	}
+	obj.Name = name
+	obj.Body = result.Body
+	obj.Size = uint64(headers.ContentLength)
+	obj.LastModified = headers.LastModified
 
 	return obj, nil
 }
