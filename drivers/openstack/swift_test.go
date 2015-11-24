@@ -30,15 +30,15 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	client.CreateContainer(TEST_CONTAINER_NAME)
-
+	client.CreateContainer()
 	code := m.Run()
-	defer os.Exit(code)
+	client.DeleteContainer()
 
-	client.DeleteContainer(TEST_CONTAINER_NAME)
+	defer os.Exit(code)
 }
 
 func TestUpload(t *testing.T) {
+
 	testobj, err := ioutil.TempFile("", "objfs")
 	if err != nil {
 		t.Errorf("%v", err)
@@ -58,6 +58,8 @@ func TestUpload(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
+	client.CreateContainer()
+
 	obj, err := client.Get(TEST_OBJECT_NAME)
 	if err != nil {
 		t.Errorf("%v", err)
@@ -105,5 +107,34 @@ func TestDelete(t *testing.T) {
 	}
 	if exists {
 		t.Errorf("Delete Failed.")
+	}
+}
+
+func TestHasContainer(t *testing.T) {
+	var err error
+	var ok bool
+
+	if err = client.CreateContainer(); err != nil {
+		t.Errorf("%v", err)
+	}
+
+	ok, err = client.HasContainer()
+	if err != nil {
+		t.Errorf("%v", err)
+
+	} else if !ok {
+		t.Errorf("Container creation failed")
+	}
+
+	if err = client.DeleteContainer(); err != nil {
+		t.Errorf("%v", err)
+	}
+
+	ok, err = client.HasContainer()
+	if err != nil {
+		t.Errorf("%v", err)
+
+	} else if ok {
+		t.Errorf("Container was deleted but Container exists?")
 	}
 }
