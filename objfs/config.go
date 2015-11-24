@@ -101,7 +101,6 @@ func (c *Config) GetFlags() []cli.Flag {
 }
 
 func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
-
 	// Debug mode
 	c.Debug = ctx.Bool("debug")
 	if c.Debug {

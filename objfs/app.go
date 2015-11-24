@@ -2,15 +2,21 @@ package objfs
 
 import (
 	"os"
-	"os/exec"
 	"os/signal"
-	"path"
 	"syscall"
 
 	"time"
 
+	"os/exec"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
+)
+
+const (
+	DAEMONIZE_STARTING = iota
+	DAEMONIZE_SUCCESS
+	DAEMONIZE_FAIL
 )
 
 func Run() {
@@ -55,19 +61,13 @@ func Run() {
 		server, err := fs.Mount()
 		if err != nil {
 			log.Warnf("%v", err)
-
-			if !config.NoDaemon {
-				afterDaemonize()
-			}
+			afterDaemonize(err)
 			return
 		}
+		afterDaemonize(nil)
 
+		// main loop
 		log.Debugf("ObjFS process with pid %d started", syscall.Getpid())
-
-		if !config.NoDaemon {
-			afterDaemonize()
-		}
-
 		server.Serve()
 
 		log.Debug("Shutdown")
@@ -76,59 +76,67 @@ func Run() {
 	app.RunAndExitOnError()
 }
 
-func lockfile() string {
-	return path.Join(os.TempDir(), ".objfs-startup")
-}
-
+// Spawn a child process and waiting for completing the launch.
 func daemonize(c *cli.Context, config *Config) (err error) {
-	// TODO: これでOK?
-	if _, err = os.Stat(lockfile()); err == nil {
-		// Child process
+	if config.NoDaemon {
+		// child process
 		return nil
 	}
 
-	// Create a lockfile
-	log.Debug("Create a lockfile")
-	f, err := os.OpenFile(lockfile(), os.O_CREATE|os.O_TRUNC, 0600)
+	// Spawn a daemon process
+	log.Debug("Spawn a daemon process")
+
+	args := []string{"--no-daemon"}
+	args = append(args, os.Args[1:]...)
+
+	// Used in IPC
+	r, w, err := os.Pipe()
 	if err != nil {
 		return err
 	}
-	f.Close()
 
-	// Spawn a daemon process
-	log.Debug("Spawn a daemon process")
-	cmd := exec.Command(os.Args[0], os.Args[1:]...)
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.ExtraFiles = []*os.File{w}
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Start()
 
-	// Wait 10 seconds for lunching a child process.
+	// Wait 30 seconds for lunching a child process.
+	status := DAEMONIZE_STARTING
+	go func() {
+		buf := make([]byte, 1)
+		r.Read(buf)
+
+		if int(buf[0]) == DAEMONIZE_SUCCESS {
+			status = int(buf[0])
+		} else {
+			status = DAEMONIZE_FAIL
+		}
+	}()
+
 	i := 0
-	ok := false
-	for i < 10 {
-		if _, err = os.Stat(lockfile()); err != nil {
-			// Child process has been started successfully
-			ok = true
+	for i < 60 {
+		if status != DAEMONIZE_STARTING {
 			break
 		}
-
-		log.Debug("Wait starting a daemon process")
-
 		time.Sleep(500 * time.Millisecond)
 		i++
+
+		log.Debug("Wait starting a child process")
 	}
 
 	// Exit parent process
-	if ok {
+	if status == DAEMONIZE_SUCCESS {
+		log.Debug("objfs started successfuly")
 		os.Exit(0)
 	} else {
-		log.Warn("ObjFs daemon failed to start")
+		log.Warn("objfs failed to start")
 		os.Exit(1)
 	}
 	return nil
 }
 
-func afterDaemonize() {
+func afterDaemonize(err error) {
 	// Ignore SIGCHLD signal
 	signal.Ignore(syscall.SIGCHLD)
 
@@ -146,7 +154,14 @@ func afterDaemonize() {
 	// chdir for root directory
 	syscall.Chdir("/")
 
-	// Remove lock file
-	log.Debug("Delete a lockfile")
-	os.Remove(lockfile())
+	// Notify that the child process started successfuly
+	pipe := os.NewFile(uintptr(3), "pipe")
+	if pipe != nil {
+		defer pipe.Close()
+		if err == nil {
+			pipe.Write([]byte{DAEMONIZE_SUCCESS})
+		} else {
+			pipe.Write([]byte{DAEMONIZE_FAIL})
+		}
+	}
 }
