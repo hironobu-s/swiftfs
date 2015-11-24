@@ -51,6 +51,10 @@ func (c *Config) loadDrivers() {
 
 			log.Debugf("Load driver: %s", name)
 
+		// case "dummy":
+		// 	c.drivers[name] = &dummy.Dummy{}
+		// 	c.driverConfigs[name] = &dummy.DummyConfig{}
+
 		default:
 			log.Warnf("Driver \"%s\" not found.", name)
 		}
