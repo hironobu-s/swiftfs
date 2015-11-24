@@ -56,6 +56,8 @@ func TestSetConfigFromContext(t *testing.T) {
 		"testmountpoint",
 	}
 
+	defer os.Remove("log.txt")
+
 	set.Parse(testargs)
 	c := cli.NewContext(nil, set, nil)
 	if err := config.SetConfigFromContext(c); err != nil {
