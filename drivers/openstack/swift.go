@@ -188,7 +188,6 @@ func (s *Swift) Auth() error {
 }
 
 func (s *Swift) List() (objects []drivers.Object) {
-
 	pager := swiftobjects.List(s.client, s.containerName, swiftobjects.ListOpts{
 		Full: true,
 	})
@@ -246,7 +245,6 @@ func (s *Swift) Delete(name string) error {
 }
 
 func (s *Swift) Get(name string) (obj drivers.Object, err error) {
-
 	obj = drivers.Object{}
 
 	log.Debugf("(OpenStack) Download object named \"%s\"", name)
