@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -11,9 +13,14 @@ import (
 	"github.com/hironobu-s/objfs/drivers"
 	"github.com/rackspace/gophercloud"
 	"github.com/rackspace/gophercloud/openstack"
+	"github.com/rackspace/gophercloud/openstack/objectstorage/v1/accounts"
 	swiftcontainers "github.com/rackspace/gophercloud/openstack/objectstorage/v1/containers"
 	swiftobjects "github.com/rackspace/gophercloud/openstack/objectstorage/v1/objects"
 	"github.com/rackspace/gophercloud/pagination"
+)
+
+const (
+	DEFAULT_ACCOUNT_QUOTA = 1024 * 1024 * 1024 * 1024 * 100 // 100TB
 )
 
 func (c *SwiftConfig) GetFlags() []cli.Flag {
@@ -152,7 +159,8 @@ func (s *Swift) Auth() error {
 		return err
 	}
 
-	s.client, err = openstack.NewObjectStorageV1(provider, gophercloud.EndpointOpts{})
+	opts := gophercloud.EndpointOpts{}
+	s.client, err = openstack.NewObjectStorageV1(provider, opts)
 	if err != nil {
 		return err
 	}
@@ -242,30 +250,89 @@ func (s *Swift) Get(name string) (obj drivers.Object, err error) {
 	return obj, nil
 }
 
-func (s *Swift) HasContainer() (bool, error) {
-	opts := swiftcontainers.ListOpts{}
-	pager := swiftcontainers.List(s.client, opts)
-	if pager.Err != nil {
-		return false, pager.Err
+func (s *Swift) GetContainer() (container *drivers.Container, err error) {
+	m := new(sync.Mutex)
+	cerr := make(chan error)
+	container = &drivers.Container{
+		Name: s.containerName,
 	}
 
-	has := false
-	pager.EachPage(func(page pagination.Page) (bool, error) {
-		names, err := swiftcontainers.ExtractNames(page)
+	// get account quota
+	go func(mm *sync.Mutex) {
+		account := accounts.Get(s.client, nil)
+		headers, err := account.ExtractHeader()
 		if err != nil {
-			return false, err
+			cerr <- err
+			return
 		}
 
-		for _, name := range names {
-			if name == s.containerName {
-				has = true
-				return false, nil
+		var quota uint64
+		strval := headers.Get("X-Account-Meta-Quota-Bytes")
+		if strval != "" {
+			quota, err = strconv.ParseUint(strval, 10, 64)
+			if err != nil {
+				quota = DEFAULT_ACCOUNT_QUOTA
+			}
+
+		} else {
+			quota = DEFAULT_ACCOUNT_QUOTA
+		}
+
+		m.Lock()
+		container.Quota = quota
+		m.Unlock()
+
+		cerr <- nil
+	}(m)
+
+	// get container used
+	go func(mm *sync.Mutex) {
+		var strval string
+
+		result := swiftcontainers.Get(s.client, s.containerName)
+		if result.Err != nil {
+			cerr <- result.Err
+			return
+		}
+
+		headers, err := result.ExtractHeader()
+		if err != nil {
+			cerr <- err
+			return
+		}
+
+		var used, count uint64
+		strval = headers.Get("X-Container-Bytes-Used")
+		if strval != "" {
+			if used, err = strconv.ParseUint(strval, 10, 64); err != nil {
+				used = 0
 			}
 		}
-		return true, nil
-	})
 
-	return has, nil
+		strval = headers.Get("X-Container-Object-Count")
+		if strval != "" {
+			if count, err = strconv.ParseUint(strval, 10, 64); err != nil {
+				count = 0
+			}
+		}
+
+		m.Lock()
+		container.Used = used
+		container.Count = count
+		m.Unlock()
+
+		cerr <- nil
+	}(m)
+
+	var i = 0
+	for i < 2 {
+		if err = <-cerr; err != nil {
+			return nil, err
+		}
+		i++
+	}
+
+	return container, nil
 }
 
 func (s *Swift) CreateContainer() error {
@@ -277,20 +344,4 @@ func (s *Swift) CreateContainer() error {
 func (s *Swift) DeleteContainer() error {
 	result := swiftcontainers.Delete(s.client, s.containerName)
 	return result.Err
-}
-
-func (s *Swift) ListContainer() {
-
-	pager := swiftcontainers.List(s.client, swiftcontainers.ListOpts{Full: true})
-	pager.EachPage(func(page pagination.Page) (bool, error) {
-		containerList, err := swiftcontainers.ExtractInfo(page)
-		if err != nil {
-			return false, err
-		}
-
-		for _, c := range containerList {
-			println(c.Name)
-		}
-		return true, nil
-	})
 }

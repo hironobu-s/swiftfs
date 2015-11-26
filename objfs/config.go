@@ -13,6 +13,11 @@ import (
 	"github.com/hironobu-s/objfs/drivers/openstack"
 )
 
+const (
+	APP_VERSION = "0.1.0"
+	APP_NAME    = "objfs"
+)
+
 type Config struct {
 	Debug           bool
 	NoDaemon        bool

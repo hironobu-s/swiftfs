@@ -8,7 +8,10 @@ import (
 )
 
 type Container struct {
-	Name string
+	Name  string
+	Quota uint64
+	Used  uint64
+	Count uint64
 }
 
 type Object struct {
@@ -33,7 +36,7 @@ type Driver interface {
 	Upload(string, io.ReadSeeker) error
 	Delete(string) error
 
-	HasContainer() (bool, error)
+	GetContainer() (*Container, error)
 	CreateContainer() error
 	DeleteContainer() error
 }

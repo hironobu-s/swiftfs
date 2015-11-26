@@ -2,12 +2,10 @@ package objfs
 
 import (
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
-
 	"time"
-
-	"os/exec"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
@@ -22,9 +20,9 @@ const (
 func Run() {
 	app := cli.NewApp()
 
-	app.Name = "objfs"
+	app.Name = APP_NAME
 	app.Usage = "The file system to mount OpenStack Swift object storage via FUSE."
-	app.Version = "0.1alpha"
+	app.Version = APP_VERSION
 	app.HideHelp = true
 	app.Author = "Hironobu Saitoh"
 	app.Email = "hiro@hironobu.org"
@@ -47,11 +45,13 @@ func Run() {
 			return
 		}
 
+		daemonized := false
 		if !config.NoDaemon {
 			if err = daemonize(c, config); err != nil {
 				log.Warnf("%v", err)
 				return
 			}
+			daemonized = true
 		}
 
 		log.Debug("Create a filesystem")
@@ -61,10 +61,16 @@ func Run() {
 		server, err := fs.Mount()
 		if err != nil {
 			log.Warnf("%v", err)
-			afterDaemonize(err)
+
+			if daemonized {
+				afterDaemonize(err)
+			}
 			return
 		}
-		afterDaemonize(nil)
+
+		if daemonized {
+			afterDaemonize(nil)
+		}
 
 		// main loop
 		log.Debugf("ObjFS process with pid %d started", syscall.Getpid())
@@ -148,10 +154,10 @@ func afterDaemonize(err error) {
 	// Become the process group leader
 	syscall.Setsid()
 
-	// Clear umask
+	// // Clear umask
 	syscall.Umask(022)
 
-	// chdir for root directory
+	// // chdir for root directory
 	syscall.Chdir("/")
 
 	// Notify that the child process started successfuly

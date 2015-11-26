@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"os"
 
+	"time"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
@@ -44,20 +46,28 @@ func (fs *fileSystem) Mount() (server *fuse.Server, err error) {
 		}
 
 	} else {
-		has, err := fs.driver.HasContainer()
+		_, err := fs.driver.GetContainer()
 		if err != nil {
-			return nil, err
-		} else if !has {
 			return nil, fmt.Errorf("Container \"%s\" not found", fs.containerName)
 		}
 	}
 
 	path := pathfs.NewPathNodeFs(fs, nil)
-	server, _, err = nodefs.MountRoot(fs.mountPoint, path.Root(), nil)
+	con := nodefs.NewFileSystemConnector(path.Root(), &nodefs.Options{
+		EntryTimeout:    time.Second,
+		AttrTimeout:     time.Second,
+		NegativeTimeout: time.Second,
+	})
+
+	opts := &fuse.MountOptions{
+		Name:   APP_NAME,
+		FsName: APP_NAME,
+	}
+
+	server, err = fuse.NewServer(con.RawFS(), fs.mountPoint, opts)
 	if err != nil {
 		return nil, err
 	}
-
 	return server, nil
 }
 
@@ -180,4 +190,42 @@ func (fs *fileSystem) Unlink(name string, context *fuse.Context) (code fuse.Stat
 	fs.buildObjectList()
 
 	return fuse.OK
+}
+
+func (fs *fileSystem) Chmod(name string, mode uint32, context *fuse.Context) (code fuse.Status) {
+	return fuse.OK
+}
+
+func (fs *fileSystem) Chown(name string, uid uint32, gid uint32, context *fuse.Context) (code fuse.Status) {
+	return fuse.OK
+}
+
+func (fs *fileSystem) Access(name string, mode uint32, context *fuse.Context) (code fuse.Status) {
+	return fuse.OK
+}
+func (fs *fileSystem) GetXAttr(name string, attribute string, context *fuse.Context) (data []byte, code fuse.Status) {
+	return []byte(""), fuse.OK
+}
+
+func (fs *fileSystem) SetXAttr(name string, attr string, data []byte, flags int, context *fuse.Context) fuse.Status {
+	return fuse.OK
+}
+
+func (fs *fileSystem) StatFs(name string) *fuse.StatfsOut {
+	container, err := fs.driver.GetContainer()
+
+	if err == nil {
+		return &fuse.StatfsOut{
+			Blocks:  container.Quota,
+			Bsize:   1,
+			Bfree:   container.Quota - container.Used*10,
+			Bavail:  container.Quota - container.Used*10,
+			Files:   container.Count,
+			Ffree:   0,
+			Frsize:  0,
+			NameLen: 0,
+		}
+	} else {
+		return nil
+	}
 }
