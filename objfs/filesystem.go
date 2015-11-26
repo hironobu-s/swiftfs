@@ -218,8 +218,8 @@ func (fs *fileSystem) StatFs(name string) *fuse.StatfsOut {
 		return &fuse.StatfsOut{
 			Blocks:  container.Quota,
 			Bsize:   1,
-			Bfree:   container.Quota - container.Used*10,
-			Bavail:  container.Quota - container.Used*10,
+			Bfree:   container.Quota - container.Used,
+			Bavail:  container.Quota - container.Used,
 			Files:   container.Count,
 			Ffree:   0,
 			Frsize:  0,
