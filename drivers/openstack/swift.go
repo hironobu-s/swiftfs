@@ -3,7 +3,6 @@ package openstack
 import (
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -53,7 +52,12 @@ func (c *SwiftConfig) GetFlags() []cli.Flag {
 		cli.StringFlag{
 			Name:  "os-auth-url",
 			Value: "",
-			Usage: "(OpenStack) Auth URL",
+			Usage: "(OpenStack) Auth URL(required)",
+		},
+		cli.StringFlag{
+			Name:  "os-region-name",
+			Value: "",
+			Usage: "(OpenStack) Region Name",
 		},
 	}
 	return flags
@@ -67,6 +71,7 @@ type SwiftConfig struct {
 	Password         string
 	TenantID         string
 	TenantName       string
+	RegionName       string
 
 	// Container
 	ContainerName string
@@ -78,14 +83,18 @@ type SwiftConfig struct {
 
 func (c *SwiftConfig) SetConfigFromContext(ctx *cli.Context) error {
 	c.IdentityEndpoint = ctx.String("os-auth-url")
+	if c.IdentityEndpoint == "" {
+		return fmt.Errorf("You must provide os-auth-url")
+	}
+
 	c.UserID = ctx.String("os-user-id")
 	c.Username = ctx.String("os-username")
 	c.Password = ctx.String("os-password")
 	c.TenantID = ctx.String("os-tenant-id")
 	c.TenantName = ctx.String("os-tenant-name")
+	c.RegionName = ctx.String("os-region-name")
 
 	c.ContainerName = ctx.Args()[0]
-
 	if c.ContainerName == "" {
 		return fmt.Errorf("Container name was not provided.")
 	}
@@ -99,9 +108,10 @@ func (c *SwiftConfig) SetConfigFromContext(ctx *cli.Context) error {
 type Swift struct {
 	client *gophercloud.ServiceClient
 
-	containerName  string
-	objectListSize int
-	authOptions    gophercloud.AuthOptions
+	containerName   string
+	objectListSize  int
+	authOptions     gophercloud.AuthOptions
+	endpointOptions gophercloud.EndpointOpts
 
 	objects []drivers.Object
 }
@@ -116,17 +126,13 @@ func (s *Swift) SetConfig(config drivers.DriverConfig) (err error) {
 		return fmt.Errorf("Type conversion failed.")
 	}
 
-	if os.Getenv("OS_AUTH_URL") != "" {
+	// Auth options
+	s.authOptions, err = openstack.AuthOptionsFromEnv()
+	if err == nil {
 		log.Debugf("(OpenStack) Use auth parameters in ENV.")
-
-		s.authOptions, err = openstack.AuthOptionsFromEnv()
-		if err != nil {
-			return err
-		}
 
 	} else {
 		log.Debugf("(OpenStack) Use auth parameters via command-line options.")
-
 		s.authOptions = gophercloud.AuthOptions{
 			IdentityEndpoint: c.IdentityEndpoint,
 			UserID:           c.UserID,
@@ -135,6 +141,12 @@ func (s *Swift) SetConfig(config drivers.DriverConfig) (err error) {
 			TenantID:         c.TenantID,
 			TenantName:       c.TenantName,
 		}
+	}
+
+	// Endpoint options
+	s.endpointOptions = gophercloud.EndpointOpts{}
+	if c.RegionName != "" {
+		s.endpointOptions.Region = c.RegionName
 	}
 
 	// Enable auto reauth
@@ -147,11 +159,12 @@ func (s *Swift) SetConfig(config drivers.DriverConfig) (err error) {
 }
 
 func (s *Swift) Auth() error {
-
 	if s.authOptions.Username != "" {
-		log.Debugf("(OpenStack) Authenticating by username(%s)", s.authOptions.Username)
+		log.Debugf("(OpenStack) Authenticate by username(%s)", s.authOptions.Username)
+	} else if s.authOptions.UserID != "" {
+		log.Debugf("(OpenStack) Authenticate by user-id(%s)", s.authOptions.UserID)
 	} else {
-		log.Debugf("(OpenStack) Authenticating by user-id(%s)", s.authOptions.UserID)
+		log.Debugf("(OpenStack) Authenticate")
 	}
 
 	provider, err := openstack.AuthenticatedClient(s.authOptions)
@@ -159,8 +172,7 @@ func (s *Swift) Auth() error {
 		return err
 	}
 
-	opts := gophercloud.EndpointOpts{}
-	s.client, err = openstack.NewObjectStorageV1(provider, opts)
+	s.client, err = openstack.NewObjectStorageV1(provider, s.endpointOptions)
 	if err != nil {
 		return err
 	}
