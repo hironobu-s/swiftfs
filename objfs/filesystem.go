@@ -93,7 +93,6 @@ func (fs *fileSystem) String() string {
 func (fs *fileSystem) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
 	var attr *fuse.Attr
 	if name == "" {
-
 		log.Debugf("GetAttr: (root) and refreash object list.")
 
 		fs.buildObjectList()
@@ -104,7 +103,6 @@ func (fs *fileSystem) GetAttr(name string, context *fuse.Context) (*fuse.Attr, f
 		return attr, fuse.OK
 
 	} else {
-
 		obj := fs.findObject(name)
 
 		if obj != nil {
