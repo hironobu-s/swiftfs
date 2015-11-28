@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
-
-	"strings"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/hironobu-s/swiftfs/config"
