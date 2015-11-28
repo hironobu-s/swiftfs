@@ -178,9 +178,6 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 
 	// No daemon mode
 	c.NoDaemon = ctx.Bool("no-daemon")
-	if c.NoDaemon {
-		log.Debug("no-daemon option is enabled")
-	}
 
 	// OpenStack
 	c.IdentityEndpoint = ctx.String("os-auth-url")

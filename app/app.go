@@ -47,13 +47,11 @@ func Run() {
 			return
 		}
 
-		daemonized := false
 		if !conf.NoDaemon {
 			if err = daemonize(c, conf); err != nil {
 				log.Warnf("%v", err)
 				return
 			}
-			daemonized = true
 		}
 
 		log.Debug("Create a filesystem")
@@ -63,16 +61,11 @@ func Run() {
 		server, err := fs.Mount()
 		if err != nil {
 			log.Warnf("%v", err)
-
-			if daemonized {
-				afterDaemonize(err)
-			}
+			afterDaemonize(err)
 			return
 		}
 
-		if daemonized {
-			afterDaemonize(nil)
-		}
+		afterDaemonize(nil)
 
 		// main loop
 		log.Debugf("Swiftfs process with pid %d started", syscall.Getpid())
