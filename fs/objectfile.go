@@ -1,4 +1,4 @@
-package objfs
+package fs
 
 import (
 	"fmt"
@@ -13,22 +13,23 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
-	"github.com/hironobu-s/objfs/drivers"
+	"github.com/hironobu-s/swiftfs/openstack"
 )
 
 type ObjectFile struct {
-	Inode  *nodefs.Inode
-	name   string
-	driver drivers.Driver
-	file   *os.File
-	lock   sync.Mutex
+	swift *openstack.Swift
+
+	Inode *nodefs.Inode
+	name  string
+	file  *os.File
+	lock  sync.Mutex
 
 	needUpload bool
 
 	nodefs.File
 }
 
-func NewObjectFile(name string, driver drivers.Driver) (*ObjectFile, error) {
+func NewObjectFile(name string, swift *openstack.Swift) (*ObjectFile, error) {
 	filename := "objfs" + strings.Replace(name, "/", "-", -1)
 	f, err := os.OpenFile(filepath.Join(os.TempDir(), filename), os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -39,7 +40,7 @@ func NewObjectFile(name string, driver drivers.Driver) (*ObjectFile, error) {
 	o := &ObjectFile{
 		Inode:      nil,
 		name:       name,
-		driver:     driver,
+		swift:      swift,
 		file:       f,
 		needUpload: false,
 	}
@@ -52,7 +53,7 @@ func NewObjectFile(name string, driver drivers.Driver) (*ObjectFile, error) {
 }
 
 func (o *ObjectFile) download() error {
-	obj, err := o.driver.Get(o.name)
+	obj, err := o.swift.Get(o.name)
 	if err != nil {
 		log.Warnf("Error downloading %s. %v", o.name, err)
 		return err
@@ -120,7 +121,7 @@ func (o *ObjectFile) Flush() fuse.Status {
 	o.lock.Lock()
 	var err error
 	if o.needUpload {
-		err = o.driver.Upload(o.name, o.file)
+		err = o.swift.Upload(o.name, o.file)
 		o.needUpload = false
 	}
 	o.lock.Unlock()
@@ -133,7 +134,7 @@ func (o *ObjectFile) Fsync(flags int) (code fuse.Status) {
 
 	o.lock.Lock()
 	r := fuse.ToStatus(syscall.Fsync(int(o.file.Fd())))
-	o.driver.Upload(o.name, o.file)
+	o.swift.Upload(o.name, o.file)
 	o.lock.Unlock()
 
 	return r

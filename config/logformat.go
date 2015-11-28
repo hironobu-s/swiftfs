@@ -1,8 +1,7 @@
-package objfs
+package config
 
 import (
 	"bytes"
-
 	"fmt"
 
 	log "github.com/Sirupsen/logrus"

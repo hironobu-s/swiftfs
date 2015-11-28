@@ -1,4 +1,4 @@
-package objfs
+package fs
 
 import (
 	"fmt"
@@ -14,27 +14,29 @@ import (
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"github.com/hanwen/go-fuse/fuse/pathfs"
-	"github.com/hironobu-s/objfs/drivers"
+	"github.com/hironobu-s/swiftfs/config"
+	"github.com/hironobu-s/swiftfs/openstack"
 )
 
 type fileSystem struct {
-	driver          drivers.Driver
 	mountPoint      string
 	containerName   string
 	createContainer bool
-	objectList      drivers.ObjectList
+
+	swift      *openstack.Swift
+	objectList openstack.ObjectList
 
 	lock sync.Mutex
 
 	pathfs.FileSystem
 }
 
-func NewFileSystem(config *Config) *fileSystem {
+func NewFileSystem(c *config.Config) *fileSystem {
 	fs := &fileSystem{
-		mountPoint:      config.MountPoint,
-		driver:          config.Driver,
-		containerName:   config.ContainerName,
-		createContainer: config.CreateContainer,
+		swift:           openstack.NewSwift(c),
+		mountPoint:      c.MountPoint,
+		containerName:   c.ContainerName,
+		createContainer: c.CreateContainer,
 		lock:            sync.Mutex{},
 
 		FileSystem: pathfs.NewDefaultFileSystem(),
@@ -43,17 +45,17 @@ func NewFileSystem(config *Config) *fileSystem {
 }
 
 func (fs *fileSystem) Mount() (server *fuse.Server, err error) {
-	if err = fs.driver.Auth(); err != nil {
+	if err = fs.swift.Auth(); err != nil {
 		return nil, err
 	}
 
 	if fs.createContainer {
-		if err = fs.driver.CreateContainer(); err != nil {
+		if err = fs.swift.CreateContainer(); err != nil {
 			return nil, err
 		}
 
 	} else {
-		_, err := fs.driver.GetContainer()
+		_, err := fs.swift.GetContainer()
 		if err != nil {
 			return nil, fmt.Errorf("Container \"%s\" not found", fs.containerName)
 		}
@@ -67,8 +69,8 @@ func (fs *fileSystem) Mount() (server *fuse.Server, err error) {
 	})
 
 	opts := &fuse.MountOptions{
-		Name:   APP_NAME,
-		FsName: APP_NAME,
+		Name:   config.APP_NAME,
+		FsName: config.APP_NAME,
 	}
 
 	server, err = fuse.NewServer(con.RawFS(), fs.mountPoint, opts)
@@ -80,13 +82,13 @@ func (fs *fileSystem) Mount() (server *fuse.Server, err error) {
 }
 
 func (fs *fileSystem) buildObjectList() {
-	fs.objectList = fs.driver.List()
+	fs.objectList = fs.swift.List()
 }
 
 // ------------------------
 
 func (fs *fileSystem) String() string {
-	return "objfs"
+	return "swiftfs"
 }
 
 func (fs *fileSystem) getCurrentUser() fuse.Owner {
@@ -132,7 +134,7 @@ func (fs *fileSystem) GetAttr(name string, context *fuse.Context) (*fuse.Attr, f
 
 	obj := fs.objectList.Find(name)
 	if obj != nil {
-		if obj.Type == drivers.DIRECTORY {
+		if obj.Type == openstack.DIRECTORY {
 			log.Debugf("GetAttr: %s(directory)", name)
 			attr = &fuse.Attr{
 				Owner: owner,
@@ -177,7 +179,7 @@ func (fs *fileSystem) OpenDir(dirname string, context *fuse.Context) (c []fuse.D
 		log.Debugf("append dir entry: %s", filepath.Base(obj.Name))
 
 		var mode uint32
-		if obj.Type == drivers.DIRECTORY {
+		if obj.Type == openstack.DIRECTORY {
 			mode = fuse.S_IFDIR
 		} else {
 			mode = fuse.S_IFREG
@@ -202,7 +204,7 @@ func (fs *fileSystem) Create(name string, flags uint32, mode uint32, context *fu
 	defer os.Remove(data.Name())
 	defer data.Close()
 
-	err = fs.driver.Upload(name, data)
+	err = fs.swift.Upload(name, data)
 	if err != nil {
 		log.Debugf("Temp Create Error: %v", err)
 		return nil, fuse.ENOSYS
@@ -210,7 +212,7 @@ func (fs *fileSystem) Create(name string, flags uint32, mode uint32, context *fu
 
 	fs.buildObjectList()
 
-	file, err = NewObjectFile(name, fs.driver)
+	file, err = NewObjectFile(name, fs.swift)
 	if err != nil {
 		log.Debugf("OBJECT ERROR: %v", err)
 		return nil, fuse.ENOSYS
@@ -221,7 +223,7 @@ func (fs *fileSystem) Create(name string, flags uint32, mode uint32, context *fu
 func (fs *fileSystem) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
 	log.Debugf("Open: %s, flags: %d", name, flags)
 
-	file, err := NewObjectFile(name, fs.driver)
+	file, err := NewObjectFile(name, fs.swift)
 	if err != nil {
 		log.Debugf("OBJECT ERROR: %v", err)
 		return nil, fuse.ENOSYS
@@ -231,7 +233,7 @@ func (fs *fileSystem) Open(name string, flags uint32, context *fuse.Context) (fi
 }
 
 func (fs *fileSystem) Unlink(name string, context *fuse.Context) (code fuse.Status) {
-	err := fs.driver.Delete(name)
+	err := fs.swift.Delete(name)
 	if err != nil {
 		log.Debugf("Delete Error: %v", err)
 		return fuse.ENOSYS
@@ -253,7 +255,7 @@ func (fs *fileSystem) Chown(name string, uid uint32, gid uint32, context *fuse.C
 }
 
 func (fs *fileSystem) StatFs(name string) *fuse.StatfsOut {
-	container, err := fs.driver.GetContainer()
+	container, err := fs.swift.GetContainer()
 
 	if err == nil {
 		return &fuse.StatfsOut{
@@ -278,7 +280,7 @@ func (fs *fileSystem) Link(oldName string, newName string, context *fuse.Context
 
 func (fs *fileSystem) Mkdir(name string, mode uint32, context *fuse.Context) fuse.Status {
 	log.Debugf("Mkdir %s", name)
-	if err := fs.driver.MakeDirectory(name); err != nil {
+	if err := fs.swift.MakeDirectory(name); err != nil {
 		return fuse.ENOSYS
 
 	} else {
@@ -294,13 +296,13 @@ func (fs *fileSystem) Rename(oldName string, newName string, context *fuse.Conte
 
 	fs.lock.Lock()
 
-	err := fs.driver.Copy(oldName, newName)
+	err := fs.swift.Copy(oldName, newName)
 	if err != nil {
 		log.Debugf("Copy Error: %v", err)
 		return fuse.ENOSYS
 	}
 
-	err = fs.driver.Delete(oldName)
+	err = fs.swift.Delete(oldName)
 	if err != nil {
 		log.Debugf("Delete Error: %v", err)
 
@@ -316,7 +318,7 @@ func (fs *fileSystem) Rename(oldName string, newName string, context *fuse.Conte
 
 func (fs *fileSystem) Rmdir(name string, context *fuse.Context) (code fuse.Status) {
 	log.Debugf("Rmdir %s", name)
-	if err := fs.driver.RemoveDirectory(name); err != nil {
+	if err := fs.swift.RemoveDirectory(name); err != nil {
 		return fuse.ENOSYS
 	} else {
 		fs.buildObjectList()

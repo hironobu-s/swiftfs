@@ -10,8 +10,7 @@ import (
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/codegangsta/cli"
-	"github.com/hironobu-s/objfs/drivers"
+	"github.com/hironobu-s/swiftfs/config"
 	"github.com/rackspace/gophercloud"
 	"github.com/rackspace/gophercloud/openstack"
 	"github.com/rackspace/gophercloud/openstack/objectstorage/v1/accounts"
@@ -24,94 +23,36 @@ const (
 	DEFAULT_ACCOUNT_QUOTA = 1024 * 1024 * 1024 * 1024 * 100 // 100TB
 )
 
-func (c *SwiftConfig) GetFlags() []cli.Flag {
-	flags := []cli.Flag{
-		cli.StringFlag{
-			Name:   "os-user-id",
-			Value:  "",
-			Usage:  "(OpenStack) User ID",
-			EnvVar: "OS_USERID",
-		},
-		cli.StringFlag{
-			Name:   "os-username",
-			Value:  "",
-			Usage:  "(OpenStack) Username",
-			EnvVar: "OS_USERNAME",
-		},
-		cli.StringFlag{
-			Name:   "os-password",
-			Value:  "",
-			Usage:  "(OpenStack) Password",
-			EnvVar: "OS_PASSWORD",
-		},
-		cli.StringFlag{
-			Name:   "os-tenant-id",
-			Value:  "",
-			Usage:  "(OpenStack) Tenant Id",
-			EnvVar: "OS_TENANT_ID",
-		},
-		cli.StringFlag{
-			Name:   "os-tenant-name",
-			Value:  "",
-			Usage:  "(OpenStack) Tenant Name",
-			EnvVar: "OS_TENANT_NAME",
-		},
-		cli.StringFlag{
-			Name:   "os-auth-url",
-			Value:  "",
-			Usage:  "(OpenStack) Auth URL(required)",
-			EnvVar: "OS_AUTH_URL",
-		},
-		cli.StringFlag{
-			Name:   "os-region-name",
-			Value:  "",
-			Usage:  "(OpenStack) Region Name",
-			EnvVar: "OS_REGION_NAME",
-		},
-	}
-	return flags
+const (
+	FILE = iota
+	DIRECTORY
+)
+
+type Container struct {
+	Name  string
+	Quota uint64
+	Used  uint64
+	Count uint64
 }
 
-type SwiftConfig struct {
-	// OpenStack credential
-	IdentityEndpoint string
-	UserID           string
-	Username         string
-	Password         string
-	TenantID         string
-	TenantName       string
-	RegionName       string
+type ObjectList []Object
 
-	// Container
-	ContainerName string
-
-	// Size of internal slice that includes the objects which from Object Storage.
-	// This parameter affect the performance to build it.
-	ObjectListSize int
-}
-
-func (c *SwiftConfig) SetConfigFromContext(ctx *cli.Context) error {
-	c.IdentityEndpoint = ctx.String("os-auth-url")
-	if c.IdentityEndpoint == "" {
-		return fmt.Errorf("You must provide os-auth-url")
+func (list ObjectList) Find(name string) *Object {
+	// TODO: more efficiency
+	for _, obj := range list {
+		if obj.Name == name {
+			return &obj
+		}
 	}
-
-	c.UserID = ctx.String("os-user-id")
-	c.Username = ctx.String("os-username")
-	c.Password = ctx.String("os-password")
-	c.TenantID = ctx.String("os-tenant-id")
-	c.TenantName = ctx.String("os-tenant-name")
-	c.RegionName = ctx.String("os-region-name")
-
-	c.ContainerName = ctx.Args()[0]
-	if c.ContainerName == "" {
-		return fmt.Errorf("Container name was not provided.")
-	}
-
-	// Default 1000
-	c.ObjectListSize = 1000
-
 	return nil
+}
+
+type Object struct {
+	Name         string
+	Body         io.ReadCloser
+	Size         uint64
+	LastModified time.Time
+	Type         int
 }
 
 type Swift struct {
@@ -121,21 +62,13 @@ type Swift struct {
 	objectListSize  int
 	authOptions     gophercloud.AuthOptions
 	endpointOptions gophercloud.EndpointOpts
-
-	objects []drivers.Object
 }
 
-func (s *Swift) DriverName() string {
-	return "OpenStack Swift"
-}
-
-func (s *Swift) SetConfig(config drivers.DriverConfig) (err error) {
-	c, ok := config.(*SwiftConfig)
-	if !ok {
-		return fmt.Errorf("Type conversion failed.")
-	}
+func NewSwift(c *config.Config) *Swift {
+	s := &Swift{}
 
 	// Auth options
+	var err error
 	s.authOptions, err = openstack.AuthOptionsFromEnv()
 	if err == nil {
 		log.Debugf("(OpenStack) Use auth parameters in ENV.")
@@ -164,7 +97,7 @@ func (s *Swift) SetConfig(config drivers.DriverConfig) (err error) {
 	// Container Name
 	s.containerName = c.ContainerName
 
-	return nil
+	return s
 }
 
 func (s *Swift) Auth() error {
@@ -189,12 +122,12 @@ func (s *Swift) Auth() error {
 	return nil
 }
 
-func (s *Swift) List() (list drivers.ObjectList) {
+func (s *Swift) List() (list ObjectList) {
 	pager := swiftobjects.List(s.client, s.containerName, swiftobjects.ListOpts{
 		Full: true,
 	})
 
-	list = make(drivers.ObjectList, s.objectListSize)
+	list = make(ObjectList, s.objectListSize)
 	var i = 0
 	pager.EachPage(func(page pagination.Page) (bool, error) {
 		objlist, err := swiftobjects.ExtractInfo(page)
@@ -218,12 +151,12 @@ func (s *Swift) List() (list drivers.ObjectList) {
 
 			var t int
 			if o.ContentType == "application/directory" {
-				t = drivers.DIRECTORY
+				t = DIRECTORY
 			} else {
-				t = drivers.FILE
+				t = FILE
 			}
 
-			list = append(list, drivers.Object{
+			list = append(list, Object{
 				Name:         o.Name,
 				Body:         nil,
 				Size:         uint64(o.Bytes),
@@ -254,8 +187,8 @@ func (s *Swift) Delete(name string) error {
 	return result.Err
 }
 
-func (s *Swift) Get(name string) (obj drivers.Object, err error) {
-	obj = drivers.Object{}
+func (s *Swift) Get(name string) (obj Object, err error) {
+	obj = Object{}
 
 	log.Debugf("(OpenStack) Download object (%s)", name)
 	opts := swiftobjects.DownloadOpts{}
@@ -277,10 +210,10 @@ func (s *Swift) Get(name string) (obj drivers.Object, err error) {
 	return obj, nil
 }
 
-func (s *Swift) GetContainer() (container *drivers.Container, err error) {
+func (s *Swift) GetContainer() (container *Container, err error) {
 	m := new(sync.Mutex)
 	cerr := make(chan error)
-	container = &drivers.Container{
+	container = &Container{
 		Name: s.containerName,
 	}
 

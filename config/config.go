@@ -1,21 +1,18 @@
-package objfs
+package config
 
 import (
 	"fmt"
 	"net/http"
 	"os"
-
 	"path/filepath"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
-	"github.com/hironobu-s/objfs/drivers"
-	"github.com/hironobu-s/objfs/drivers/openstack"
 )
 
 const (
 	APP_VERSION = "0.1.0"
-	APP_NAME    = "objfs"
+	APP_NAME    = "swiftfs"
 )
 
 type Config struct {
@@ -23,13 +20,23 @@ type Config struct {
 	NoDaemon        bool
 	Logfile         *os.File // Need close() after use
 	MountPoint      string
-	ContainerName   string
 	CreateContainer bool
-	ObjectListSize  int
 
-	Driver        drivers.Driver
-	drivers       map[string]drivers.Driver
-	driverConfigs map[string]drivers.DriverConfig
+	// OpenStack credential
+	IdentityEndpoint string
+	UserID           string
+	Username         string
+	Password         string
+	TenantID         string
+	TenantName       string
+	RegionName       string
+
+	// Container
+	ContainerName string
+
+	// Size of internal slice that includes the objects which from Object Storage.
+	// This parameter affect the performance to build it.
+	ObjectListSize int
 }
 
 func NewConfig() *Config {
@@ -37,33 +44,7 @@ func NewConfig() *Config {
 		ObjectListSize: 1000,
 	}
 
-	config.loadDrivers()
 	return config
-}
-
-func (c *Config) loadDrivers() {
-	c.drivers = map[string]drivers.Driver{}
-	c.driverConfigs = map[string]drivers.DriverConfig{}
-
-	// TODO: driver auto detection.
-	names := []string{"openstack"}
-
-	for _, name := range names {
-		switch name {
-		case "openstack":
-			c.drivers[name] = &openstack.Swift{}
-			c.driverConfigs[name] = &openstack.SwiftConfig{}
-
-			log.Debugf("Load driver: %s", name)
-
-		// case "dummy":
-		// 	c.drivers[name] = &dummy.Dummy{}
-		// 	c.driverConfigs[name] = &dummy.DummyConfig{}
-
-		default:
-			log.Warnf("Driver \"%s\" not found.", name)
-		}
-	}
 }
 
 func (c *Config) GetFlags() []cli.Flag {
@@ -80,7 +61,7 @@ func (c *Config) GetFlags() []cli.Flag {
 
 		cli.BoolFlag{
 			Name:  "no-daemon",
-			Usage: "Start an objfs process as a foreground (for debugging)",
+			Usage: "Start an swiftfs process as a foreground (for debugging)",
 		},
 
 		cli.StringFlag{
@@ -98,13 +79,51 @@ func (c *Config) GetFlags() []cli.Flag {
 			Name:  "create-container, c",
 			Usage: "Create a container if is not exist",
 		},
+
+		cli.StringFlag{
+			Name:   "os-user-id",
+			Value:  "",
+			Usage:  "(OpenStack) User ID",
+			EnvVar: "OS_USERID",
+		},
+		cli.StringFlag{
+			Name:   "os-username",
+			Value:  "",
+			Usage:  "(OpenStack) Username",
+			EnvVar: "OS_USERNAME",
+		},
+		cli.StringFlag{
+			Name:   "os-password",
+			Value:  "",
+			Usage:  "(OpenStack) Password",
+			EnvVar: "OS_PASSWORD",
+		},
+		cli.StringFlag{
+			Name:   "os-tenant-id",
+			Value:  "",
+			Usage:  "(OpenStack) Tenant Id",
+			EnvVar: "OS_TENANT_ID",
+		},
+		cli.StringFlag{
+			Name:   "os-tenant-name",
+			Value:  "",
+			Usage:  "(OpenStack) Tenant Name",
+			EnvVar: "OS_TENANT_NAME",
+		},
+		cli.StringFlag{
+			Name:   "os-auth-url",
+			Value:  "",
+			Usage:  "(OpenStack) Auth URL(required)",
+			EnvVar: "OS_AUTH_URL",
+		},
+		cli.StringFlag{
+			Name:   "os-region-name",
+			Value:  "",
+			Usage:  "(OpenStack) Region Name",
+			EnvVar: "OS_REGION_NAME",
+		},
 	}
 	flags = append(flags, fs...)
-
-	// Merge driver-specific options
-	for _, config := range c.driverConfigs {
-		flags = append(flags, config.GetFlags()...)
-	}
 
 	return flags
 }
@@ -116,7 +135,7 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 		log.SetLevel(log.DebugLevel)
 
 		// Set LogTransport
-		http.DefaultTransport = &drivers.DebugTransport{
+		http.DefaultTransport = &DebugTransport{
 			Transport: http.DefaultTransport,
 		}
 
@@ -150,10 +169,6 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 	// Create Container
 	c.CreateContainer = ctx.Bool("create-container")
 
-	// Container name
-	c.ContainerName = ctx.Args()[0]
-	log.Debugf("Container name: %s", c.ContainerName)
-
 	// Mountpoint
 	c.MountPoint = ctx.Args()[1]
 	if c.MountPoint, err = filepath.Abs(c.MountPoint); err != nil {
@@ -167,27 +182,26 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 		log.Debug("no-daemon option is enabled")
 	}
 
-	//  Detect drivers
-	driverName := ctx.String("driver")
-
-	var ok bool
-	c.Driver, ok = c.drivers[driverName]
-	if !ok {
-		return fmt.Errorf("Driver \"%s\" not found.", driverName)
+	// OpenStack
+	c.IdentityEndpoint = ctx.String("os-auth-url")
+	if c.IdentityEndpoint == "" {
+		return fmt.Errorf("You must provide os-auth-url")
 	}
-	log.Debugf("%s driver detected", driverName)
 
-	// Set driver config
-	config, ok := c.driverConfigs[driverName]
-	if !ok {
-		return fmt.Errorf("DriverConfig \"%s\" not found.", driverName)
-	}
-	if err = config.SetConfigFromContext(ctx); err != nil {
-		return err
-	}
-	c.Driver.SetConfig(config)
+	c.UserID = ctx.String("os-user-id")
+	c.Username = ctx.String("os-username")
+	c.Password = ctx.String("os-password")
+	c.TenantID = ctx.String("os-tenant-id")
+	c.TenantName = ctx.String("os-tenant-name")
+	c.RegionName = ctx.String("os-region-name")
 
-	log.Debugf("Initialize driver config")
+	c.ContainerName = ctx.Args()[0]
+	if c.ContainerName == "" {
+		return fmt.Errorf("Container name was not provided.")
+	}
+
+	// Default 1000
+	c.ObjectListSize = 1000
 
 	return nil
 }

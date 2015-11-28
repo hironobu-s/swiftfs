@@ -1,4 +1,4 @@
-package objfs
+package app
 
 import (
 	"os"
@@ -9,6 +9,8 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
+	"github.com/hironobu-s/swiftfs/config"
+	"github.com/hironobu-s/swiftfs/fs"
 )
 
 const (
@@ -20,18 +22,18 @@ const (
 func Run() {
 	app := cli.NewApp()
 
-	app.Name = APP_NAME
-	app.Usage = "The file system to mount OpenStack Swift object storage via FUSE."
-	app.Version = APP_VERSION
+	app.Name = config.APP_NAME
+	app.Usage = "The file system to mount OpenStack Swift via FUSE."
+	app.Version = config.APP_VERSION
 	app.HideHelp = true
 	app.Author = "Hironobu Saitoh"
 	app.Email = "hiro@hironobu.org"
 	app.ArgsUsage = "container-name mountpoint"
 
-	config := NewConfig()
-	defer config.Logfile.Close()
+	conf := config.NewConfig()
+	defer conf.Logfile.Close()
 
-	app.Flags = config.GetFlags()
+	app.Flags = conf.GetFlags()
 
 	app.Action = func(c *cli.Context) {
 		if c.Bool("help") || len(c.Args()) < 2 {
@@ -40,14 +42,14 @@ func Run() {
 		}
 
 		var err error
-		if err = config.SetConfigFromContext(c); err != nil {
+		if err = conf.SetConfigFromContext(c); err != nil {
 			log.Warnf("%v", err)
 			return
 		}
 
 		daemonized := false
-		if !config.NoDaemon {
-			if err = daemonize(c, config); err != nil {
+		if !conf.NoDaemon {
+			if err = daemonize(c, conf); err != nil {
 				log.Warnf("%v", err)
 				return
 			}
@@ -55,7 +57,7 @@ func Run() {
 		}
 
 		log.Debug("Create a filesystem")
-		fs := NewFileSystem(config)
+		fs := fs.NewFileSystem(conf)
 
 		log.Debug("Mount a filesystem")
 		server, err := fs.Mount()
@@ -73,7 +75,7 @@ func Run() {
 		}
 
 		// main loop
-		log.Debugf("ObjFS process with pid %d started", syscall.Getpid())
+		log.Debugf("Swiftfs process with pid %d started", syscall.Getpid())
 		server.Serve()
 
 		log.Debug("Shutdown")
@@ -83,8 +85,8 @@ func Run() {
 }
 
 // Spawn a child process and waiting for completing the launch.
-func daemonize(c *cli.Context, config *Config) (err error) {
-	if config.NoDaemon {
+func daemonize(c *cli.Context, conf *config.Config) (err error) {
+	if conf.NoDaemon {
 		// child process
 		return nil
 	}
@@ -133,10 +135,10 @@ func daemonize(c *cli.Context, config *Config) (err error) {
 
 	// Exit parent process
 	if status == DAEMONIZE_SUCCESS {
-		log.Debug("objfs started successfuly")
+		log.Debug("swiftfs started successfuly")
 		os.Exit(0)
 	} else {
-		log.Warn("objfs failed to start")
+		log.Warn("swiftfs failed to start")
 		os.Exit(1)
 	}
 	return nil

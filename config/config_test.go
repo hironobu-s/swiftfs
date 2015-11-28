@@ -1,4 +1,4 @@
-package objfs
+package config
 
 import (
 	"flag"
