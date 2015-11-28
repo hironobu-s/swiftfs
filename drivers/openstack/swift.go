@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"strings"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
 	"github.com/hironobu-s/objfs/drivers"
@@ -187,12 +189,13 @@ func (s *Swift) Auth() error {
 	return nil
 }
 
-func (s *Swift) List() (objects []drivers.Object) {
+func (s *Swift) List() (list drivers.ObjectList) {
 	pager := swiftobjects.List(s.client, s.containerName, swiftobjects.ListOpts{
-		Full: true,
+		Limit: 10000,
+		Full:  true,
 	})
 
-	objects = make([]drivers.Object, s.objectListSize)
+	list = make(drivers.ObjectList, s.objectListSize)
 	var i = 0
 	pager.EachPage(func(page pagination.Page) (bool, error) {
 		objlist, err := swiftobjects.ExtractInfo(page)
@@ -202,7 +205,7 @@ func (s *Swift) List() (objects []drivers.Object) {
 		}
 
 		for _, o := range objlist {
-			log.Debugln("append list " + o.Name)
+			//log.Debugf("append object %s", o.Name)
 
 			// gophercloudがタイムゾーンを考慮しないで返してくるっぽい？
 			var lastmodified time.Time
@@ -214,11 +217,19 @@ func (s *Swift) List() (objects []drivers.Object) {
 				lastmodified = time.Now()
 			}
 
-			objects = append(objects, drivers.Object{
+			var t int
+			if o.ContentType == "application/directory" {
+				t = drivers.DIRECTORY
+			} else {
+				t = drivers.OBJECT
+			}
+
+			list = append(list, drivers.Object{
 				Name:         o.Name,
 				Body:         nil,
 				Size:         uint64(o.Bytes),
 				LastModified: lastmodified,
+				Type:         t,
 			})
 			i++
 		}
@@ -227,7 +238,7 @@ func (s *Swift) List() (objects []drivers.Object) {
 	})
 
 	log.Debugf("(OpenStack) Fetch object list. number of objects is %d.", i)
-	return objects
+	return list
 }
 
 func (s *Swift) Upload(name string, data io.ReadSeeker) error {
@@ -247,7 +258,7 @@ func (s *Swift) Delete(name string) error {
 func (s *Swift) Get(name string) (obj drivers.Object, err error) {
 	obj = drivers.Object{}
 
-	log.Debugf("(OpenStack) Download object named \"%s\"", name)
+	log.Debugf("(OpenStack) Download object (%s)", name)
 	opts := swiftobjects.DownloadOpts{}
 	result := swiftobjects.Download(s.client, s.containerName, name, opts)
 	if result.Err != nil {
@@ -352,6 +363,16 @@ func (s *Swift) GetContainer() (container *drivers.Container, err error) {
 	return container, nil
 }
 
+func (s *Swift) Copy(oldName string, newName string) error {
+	log.Debugf("(OpenStack) Copy object from \"%s\" to \"%s\"", oldName, newName)
+
+	opts := swiftobjects.CopyOpts{
+		Destination: fmt.Sprintf("%s/%s", s.containerName, newName),
+	}
+	result := swiftobjects.Copy(s.client, s.containerName, oldName, opts)
+	return result.Err
+}
+
 func (s *Swift) CreateContainer() error {
 	opts := swiftcontainers.CreateOpts{}
 	result := swiftcontainers.Create(s.client, s.containerName, opts)
@@ -360,5 +381,19 @@ func (s *Swift) CreateContainer() error {
 
 func (s *Swift) DeleteContainer() error {
 	result := swiftcontainers.Delete(s.client, s.containerName)
+	return result.Err
+}
+
+func (s *Swift) MakeDirectory(name string) error {
+	opts := swiftobjects.CreateOpts{
+		ContentType: "application/directory",
+	}
+	result := swiftobjects.Create(s.client, s.containerName, name, strings.NewReader(""), opts)
+	return result.Err
+}
+
+func (s *Swift) RemoveDirectory(name string) error {
+	opts := swiftobjects.DeleteOpts{}
+	result := swiftobjects.Delete(s.client, s.containerName, name, opts)
 	return result.Err
 }

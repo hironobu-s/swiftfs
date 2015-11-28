@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-
+	"os/user"
+	"path/filepath"
+	"strconv"
+	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -19,7 +22,9 @@ type fileSystem struct {
 	mountPoint      string
 	containerName   string
 	createContainer bool
-	objects         []drivers.Object
+	objectList      drivers.ObjectList
+
+	lock sync.Mutex
 
 	pathfs.FileSystem
 }
@@ -30,7 +35,9 @@ func NewFileSystem(config *Config) *fileSystem {
 		driver:          config.Driver,
 		containerName:   config.ContainerName,
 		createContainer: config.CreateContainer,
-		FileSystem:      pathfs.NewDefaultFileSystem(),
+		lock:            sync.Mutex{},
+
+		FileSystem: pathfs.NewDefaultFileSystem(),
 	}
 	return fs
 }
@@ -68,20 +75,12 @@ func (fs *fileSystem) Mount() (server *fuse.Server, err error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return server, nil
 }
 
 func (fs *fileSystem) buildObjectList() {
-	fs.objects = fs.driver.List()
-}
-
-func (fs *fileSystem) findObject(name string) *drivers.Object {
-	for _, obj := range fs.objects {
-		if obj.Name == name {
-			return &obj
-		}
-	}
-	return nil
+	fs.objectList = fs.driver.List()
 }
 
 // ------------------------
@@ -90,48 +89,101 @@ func (fs *fileSystem) String() string {
 	return "objfs"
 }
 
+func (fs *fileSystem) getCurrentUser() fuse.Owner {
+	owner := fuse.Owner{
+		Uid: 0,
+		Gid: 0,
+	}
+
+	currentUser, err := user.Current()
+	if err != nil {
+		return owner
+	}
+
+	uid, err := strconv.ParseUint(currentUser.Uid, 10, 32)
+	if err != nil {
+		return owner
+	}
+
+	gid, err := strconv.ParseUint(currentUser.Gid, 10, 32)
+	if err != nil {
+		return owner
+	}
+
+	owner.Uid = uint32(uid)
+	owner.Gid = uint32(gid)
+	return owner
+}
+
 func (fs *fileSystem) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
 	var attr *fuse.Attr
-	if name == "" {
-		log.Debugf("GetAttr: (root) and refreash object list.")
+	var owner = fs.getCurrentUser()
 
-		fs.buildObjectList()
+	if name == "" {
+		log.Debugf("GetAttr: (root)")
 
 		attr = &fuse.Attr{
-			Mode: fuse.S_IFDIR | 0755,
+			Owner: owner,
+			Mode:  fuse.S_IFDIR | 0755,
+			Size:  4096,
 		}
 		return attr, fuse.OK
+	}
 
-	} else {
-		obj := fs.findObject(name)
-
-		if obj != nil {
-			log.Debugf("GetAttr: %s", name)
-
+	obj := fs.objectList.Find(name)
+	if obj != nil {
+		if obj.Type == drivers.DIRECTORY {
+			log.Debugf("GetAttr: %s(directory)", name)
 			attr = &fuse.Attr{
+				Owner: owner,
+				Mode:  fuse.S_IFDIR | 0755,
+				Size:  4096,
+				Nlink: 0,
+			}
+
+		} else {
+			log.Debugf("GetAttr: %s", name)
+			attr = &fuse.Attr{
+				Owner: owner,
 				Mode:  fuse.S_IFREG | 0644,
 				Size:  obj.Size,
 				Mtime: uint64(obj.LastModified.Unix()),
 			}
-
-			return attr, fuse.OK
-
-		} else {
-			log.Debugf("GetAttr: %s(no entry)", name)
-			return nil, fuse.ENOENT
 		}
+		return attr, fuse.OK
+
+	} else {
+		log.Debugf("GetAttr: %s(no entry)", name)
+		return nil, fuse.ENOENT
 	}
 }
 
-func (fs *fileSystem) OpenDir(name string, context *fuse.Context) (c []fuse.DirEntry, code fuse.Status) {
-	log.Debugf("OpenDir: %s", name)
+func (fs *fileSystem) OpenDir(dirname string, context *fuse.Context) (c []fuse.DirEntry, code fuse.Status) {
+	log.Debugf("OpenDir: %s", dirname)
 
-	entries := make([]fuse.DirEntry, len(fs.objects))
+	fs.buildObjectList()
 
-	var i = 0
-	for _, obj := range fs.objects {
-		entries[i] = fuse.DirEntry{Name: obj.Name, Mode: fuse.S_IFREG}
-		i++
+	entries := make([]fuse.DirEntry, 0, 1000)
+
+	for _, obj := range fs.objectList {
+		dir := filepath.Dir(obj.Name)
+		if dir == "." {
+			dir = ""
+		}
+
+		if dirname != dir {
+			continue
+		}
+		log.Debugf("append dir entry: %s", filepath.Base(obj.Name))
+
+		var mode uint32
+		if obj.Type == drivers.DIRECTORY {
+			mode = fuse.S_IFDIR
+		} else {
+			mode = fuse.S_IFREG
+		}
+		entries = append(entries, fuse.DirEntry{Name: filepath.Base(obj.Name), Mode: mode})
+
 	}
 
 	return entries, fuse.OK
@@ -191,21 +243,12 @@ func (fs *fileSystem) Unlink(name string, context *fuse.Context) (code fuse.Stat
 }
 
 func (fs *fileSystem) Chmod(name string, mode uint32, context *fuse.Context) (code fuse.Status) {
+	log.Debugf("Chmod %s", name)
 	return fuse.OK
 }
 
 func (fs *fileSystem) Chown(name string, uid uint32, gid uint32, context *fuse.Context) (code fuse.Status) {
-	return fuse.OK
-}
-
-func (fs *fileSystem) Access(name string, mode uint32, context *fuse.Context) (code fuse.Status) {
-	return fuse.OK
-}
-func (fs *fileSystem) GetXAttr(name string, attribute string, context *fuse.Context) (data []byte, code fuse.Status) {
-	return []byte(""), fuse.OK
-}
-
-func (fs *fileSystem) SetXAttr(name string, attr string, data []byte, flags int, context *fuse.Context) fuse.Status {
+	log.Debugf("Chown %s", name)
 	return fuse.OK
 }
 
@@ -225,5 +268,58 @@ func (fs *fileSystem) StatFs(name string) *fuse.StatfsOut {
 		}
 	} else {
 		return nil
+	}
+}
+
+func (fs *fileSystem) Link(oldName string, newName string, context *fuse.Context) (code fuse.Status) {
+	log.Debugf("Link %s", oldName)
+	return fuse.ENOSYS
+}
+
+func (fs *fileSystem) Mkdir(name string, mode uint32, context *fuse.Context) fuse.Status {
+	log.Debugf("Mkdir %s", name)
+	if err := fs.driver.MakeDirectory(name); err != nil {
+		return fuse.ENOSYS
+
+	} else {
+		// refresh object list
+		fs.buildObjectList()
+
+		return fuse.OK
+	}
+}
+
+func (fs *fileSystem) Rename(oldName string, newName string, context *fuse.Context) (code fuse.Status) {
+	log.Debugf("Rename from %s to %s", oldName, newName)
+
+	fs.lock.Lock()
+
+	err := fs.driver.Copy(oldName, newName)
+	if err != nil {
+		log.Debugf("Copy Error: %v", err)
+		return fuse.ENOSYS
+	}
+
+	err = fs.driver.Delete(oldName)
+	if err != nil {
+		log.Debugf("Delete Error: %v", err)
+
+		fs.buildObjectList()
+		return fuse.ENOSYS
+	}
+
+	fs.buildObjectList()
+
+	fs.lock.Unlock()
+	return fuse.OK
+}
+
+func (fs *fileSystem) Rmdir(name string, context *fuse.Context) (code fuse.Status) {
+	log.Debugf("Rmdir %s", name)
+	if err := fs.driver.RemoveDirectory(name); err != nil {
+		return fuse.ENOSYS
+	} else {
+		fs.buildObjectList()
+		return fuse.OK
 	}
 }

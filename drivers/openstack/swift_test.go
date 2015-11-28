@@ -110,31 +110,29 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-func TestHasContainer(t *testing.T) {
+func TestContainerCreation(t *testing.T) {
 	var err error
-	var ok bool
+	//var container *drivers.Container
 
 	if err = client.CreateContainer(); err != nil {
 		t.Errorf("%v", err)
 	}
 
-	ok, err = client.HasContainer()
+	_, err = client.GetContainer()
 	if err != nil {
 		t.Errorf("%v", err)
-
-	} else if !ok {
-		t.Errorf("Container creation failed")
 	}
 
 	if err = client.DeleteContainer(); err != nil {
 		t.Errorf("%v", err)
 	}
 
-	ok, err = client.HasContainer()
-	if err != nil {
-		t.Errorf("%v", err)
-
-	} else if ok {
-		t.Errorf("Container was deleted but Container exists?")
+	_, err = client.GetContainer()
+	if err == nil {
+		t.Errorf("Container deletion failed")
 	}
+}
+
+func TestMakeDirectory(t *testing.T) {
+
 }
