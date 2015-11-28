@@ -191,8 +191,7 @@ func (s *Swift) Auth() error {
 
 func (s *Swift) List() (list drivers.ObjectList) {
 	pager := swiftobjects.List(s.client, s.containerName, swiftobjects.ListOpts{
-		Limit: 10000,
-		Full:  true,
+		Full: true,
 	})
 
 	list = make(drivers.ObjectList, s.objectListSize)
