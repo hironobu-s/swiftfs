@@ -220,7 +220,7 @@ func (s *Swift) List() (list drivers.ObjectList) {
 			if o.ContentType == "application/directory" {
 				t = drivers.DIRECTORY
 			} else {
-				t = drivers.OBJECT
+				t = drivers.FILE
 			}
 
 			list = append(list, drivers.Object{

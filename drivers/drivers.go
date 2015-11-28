@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	OBJECT = iota
+	FILE = iota
 	DIRECTORY
 )
 
