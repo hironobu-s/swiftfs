@@ -22,6 +22,7 @@ type Container struct {
 type ObjectList []Object
 
 func (list ObjectList) Find(name string) *Object {
+	// TODO: more efficiency
 	for _, obj := range list {
 		if obj.Name == name {
 			return &obj
@@ -46,9 +47,9 @@ type DriverConfig interface {
 type Driver interface {
 	DriverName() string
 	SetConfig(DriverConfig) error
+	Auth() error
 
 	// Object handling
-	Auth() error
 	List() ObjectList
 	Get(string) (Object, error)
 	Upload(string, io.ReadSeeker) error
