@@ -101,6 +101,7 @@ Create a container if is not exist
 ## Todo
 
 - Support chmod/chown functions
+- Support HTTP compression(net/http package does not support it)
 - Reduce the number of building ObjectList
 - Performance inprovement when handle a huge number of objects
 - Fix bugs
