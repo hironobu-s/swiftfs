@@ -325,3 +325,7 @@ func (fs *fileSystem) Rmdir(name string, context *fuse.Context) (code fuse.Statu
 		return fuse.OK
 	}
 }
+
+func (fs *fileSystem) Utimens(name string, Atime *time.Time, Mtime *time.Time, context *fuse.Context) (code fuse.Status) {
+	return fuse.OK
+}
