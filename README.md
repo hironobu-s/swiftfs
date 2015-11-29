@@ -1,5 +1,7 @@
 # SwiftFS
 
+[Japanese Document](README.ja.md)
+
 SwiftFS is the file system to mount "Swift" OpenStack Object Storage via FUSE. This product targets for Unix flatforms.
 
 This product may works on some OpenStack environments. We are testing on the following platforms.
