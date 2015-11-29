@@ -1,21 +1,29 @@
-# ObjFS
+# SwiftFS
 
-ObjFSは各種オブジェクトストレージをFUSE(Filesystem in Userspace)を使用しマウントするファイルシステムです。現在OpenStack Swiftのみ対応しています。基本的にLinux系システムとMacFUSEを想定しています。
+SwiftFSはOpenStack Swift[^1]のコンテナをFUSE(Filesystem in Userspace)を使用しマウントするファイルシステムです。
+
+[^1]: OpenStackの分散オブジェクトストレージシステム
+
+## 動作確認環境
+
+- ConoHaオブジェクトストレージ (https://www.conoha.jp/)
+- Rackspace Cloud Files (http://www.rackspace.com/cloud/files)
+
 
 ## インストール
 
-以下のコマンドを実行することで、カレントディレクトリにobjcsコマンドがインストールされます。他のパスにインストールする場合は、冒頭の変数を書き換えて下さい。
+以下のコマンドを実行することで、カレントディレクトリにswiftfsコマンドがインストールされます。他のパスにインストールする場合は、冒頭の変数を書き換えて下さい。
 
 ### Linux(amd64)
 
 ```shell
-F=objfs curl -sL https://github.com/hironobu-s/objfs/releases/download/current/objfs.amd64.gz | zcat > $F && chmod +x $F
+F=swiftfs curl -sL https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs.amd64.gz | zcat > $F && chmod +x $F
 ```
 
 ### Max OSX
 
 ```
-F=objfs curl -sL https://github.com/hironobu-s/objfs/releases/download/current/objfs-osx.amd64.gz | zcat > $F && chmod +x $F
+F=swiftfs curl -sL https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs-osx.amd64.gz | zcat > $F && chmod +x $F
 ```
 
 ## 使い方
@@ -36,10 +44,10 @@ F=objfs curl -sL https://github.com/hironobu-s/objfs/releases/download/current/o
 
 ### マウント
 
-objfsコマンドにコンテナ名マウントポイントを指定します。
+swiftfsコマンドにコンテナ名マウントポイントを指定します。
 
 ```shell
-$ objfs CONTAINER-NAME MOUNTPOINT
+$ swiftfs CONTAINER-NAME MOUNTPOINT
 ```
 
 ### アンマウント
@@ -52,13 +60,15 @@ $ fusermount -u MOUNTPOINT
 
 ### オプション
 
+swiftfsコマンドに-hオプションをつけて実行すると、オプションの一覧が表示されます。
+
 **--debug**
 
 デバッグ出力をONにします
 
 **--no-daemon**
 
-objfsコマンドをフォアグラウンドで実行します。デバッグ用です。
+swiftfsコマンドをフォアグラウンドで実行します。デバッグ用です。
 
 **--logfile, -l**
 
@@ -68,6 +78,18 @@ objfsコマンドをフォアグラウンドで実行します。デバッグ用
 
 コマンドライン引数で指定されたコンテナが存在しなかった場合にコンテナを作成します。このオプションを指定しない場合、コンテナが存在しない場合エラーになります。
 
-## LISENCE
+## やることリスト
 
-BSD License
+- chmod/chownのサポート
+- ObjectListの構築回数を減らしたい
+- オブジェクト数が増えた時のパフォーマンス確保
+- バグフィクス
+
+## License
+
+MIT License
+
+## Author
+
+Hironobu Saitoh
+<hiro@hironobu.org>
