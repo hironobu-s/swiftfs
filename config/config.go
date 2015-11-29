@@ -69,12 +69,6 @@ func (c *Config) GetFlags() []cli.Flag {
 			Usage: "The logfile name that appends some information instead of stdout/stderr",
 		},
 
-		cli.StringFlag{
-			Name:  "driver, d",
-			Value: "openstack",
-			Usage: "The driver name of the Object Storage (currently, the only supported driver is \"openstack\")",
-		},
-
 		cli.BoolFlag{
 			Name:  "create-container, c",
 			Usage: "Create a container if is not exist",
