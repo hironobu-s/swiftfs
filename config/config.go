@@ -61,7 +61,7 @@ func (c *Config) GetFlags() []cli.Flag {
 
 		cli.BoolFlag{
 			Name:  "no-daemon",
-			Usage: "Start an swiftfs process as a foreground (imply --debug)",
+			Usage: "Start an swiftfs process as a foreground (for debugging)",
 		},
 
 		cli.StringFlag{
@@ -127,11 +127,7 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 	c.NoDaemon = ctx.Bool("no-daemon")
 
 	// Debug mode
-	if c.NoDaemon {
-		c.Debug = true
-	} else {
-		c.Debug = ctx.Bool("debug")
-	}
+	c.Debug = ctx.Bool("debug")
 	if c.Debug {
 		log.SetLevel(log.DebugLevel)
 
