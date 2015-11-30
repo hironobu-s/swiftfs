@@ -305,12 +305,14 @@ func (fs *fileSystem) Rename(oldName string, newName string, context *fuse.Conte
 	err := fs.swift.Copy(oldName, newName)
 	if err != nil {
 		log.Debugf("Copy Error: %v", err)
+		fs.lock.Unlock()
 		return fuse.ENOSYS
 	}
 
 	err = fs.swift.Delete(oldName)
 	if err != nil {
 		log.Debugf("Delete Error: %v", err)
+		fs.lock.Unlock()
 		return fuse.ENOSYS
 	}
 
