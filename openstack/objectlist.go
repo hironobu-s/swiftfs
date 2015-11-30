@@ -63,7 +63,7 @@ func (l *ObjectList) Set(name string, size uint64, lastModified time.Time, objec
 	obj := &Object{
 		Name:         name,
 		Body:         nil,
-		Size:         0,
+		Size:         size,
 		LastModified: lastModified,
 		Type:         objectType,
 	}
