@@ -4,6 +4,8 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/hironobu-s/swiftfs/config"
 )
 
 var client *Swift
@@ -12,20 +14,16 @@ const (
 	TEST_CONTAINER_NAME = "objfs-test"
 	TEST_OBJECT_NAME    = "testobject"
 	TEST_OBJECT_DATA    = "hogehoge"
+	TEST_DIRECTORY      = "testdirectory"
 )
 
 func TestMain(m *testing.M) {
 	var err error
 
-	config := &SwiftConfig{
-		ContainerName: TEST_CONTAINER_NAME,
-	}
+	c := config.NewConfig()
+	c.ContainerName = TEST_CONTAINER_NAME
 
-	client = &Swift{}
-	if err = client.SetConfig(config); err != nil {
-		panic(err)
-	}
-
+	client = NewSwift(c)
 	if err = client.Auth(); err != nil {
 		panic(err)
 	}
@@ -80,7 +78,7 @@ func TestList(t *testing.T) {
 	objects := client.List()
 
 	exists := false
-	for _, obj := range objects {
+	for _, obj := range objects.List() {
 		if obj.Name == TEST_OBJECT_NAME {
 			exists = true
 			break
@@ -99,7 +97,7 @@ func TestDelete(t *testing.T) {
 	objects := client.List()
 
 	exists := false
-	for _, obj := range objects {
+	for _, obj := range objects.List() {
 		if obj.Name == TEST_OBJECT_NAME {
 			exists = true
 			break
@@ -110,9 +108,32 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+func TestDirectoryCreation(t *testing.T) {
+	var err error
+
+	err = client.MakeDirectory(TEST_DIRECTORY)
+	if err != nil {
+		t.Errorf("Directory creation failed %v", err)
+	}
+
+	_, err = client.Get(TEST_DIRECTORY)
+	if err != nil {
+		t.Errorf("Directory creation succeeded, but cann't found a directory on Swift")
+	}
+
+	err = client.RemoveDirectory(TEST_DIRECTORY)
+	if err != nil {
+		t.Errorf("Directory deletion failed")
+	}
+
+	dir, err := client.Get(TEST_DIRECTORY)
+	if dir.Name == TEST_DIRECTORY {
+		t.Errorf("Directory deletion succeeded, but a directory exists on Swift")
+	}
+}
+
 func TestContainerCreation(t *testing.T) {
 	var err error
-	//var container *drivers.Container
 
 	if err = client.CreateContainer(); err != nil {
 		t.Errorf("%v", err)
@@ -131,8 +152,4 @@ func TestContainerCreation(t *testing.T) {
 	if err == nil {
 		t.Errorf("Container deletion failed")
 	}
-}
-
-func TestMakeDirectory(t *testing.T) {
-
 }
