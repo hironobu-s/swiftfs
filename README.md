@@ -14,19 +14,14 @@ SwiftFSはOpenStack Swift[^1]のコンテナをFUSE(Filesystem in Userspace)を�
 
 ## インストール
 
+現状ではLinux(amd64)環境でのみ動作します。
+
 以下のコマンドを実行することで、カレントディレクトリにswiftfsコマンドがインストールされます。他のパスにインストールする場合は、冒頭の変数を書き換えて下さい。
 
-### Linux(amd64)
-
 ```shell
-F=swiftfs curl -sL https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs.amd64.gz | zcat > $F && chmod +x $F
+curl -sL https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs.amd64.gz | zcat > swiftfs && chmod +x swiftfs
 ```
 
-### Max OSX
-
-```
-F=swiftfs curl -sL https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs-osx.amd64.gz | zcat > $F && chmod +x $F
-```
 
 ## 使い方
 

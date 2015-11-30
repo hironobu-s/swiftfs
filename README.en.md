@@ -17,11 +17,6 @@ Please download an executable file from [GitHub Release](https://github.com/hiro
 F=swiftfs curl -sL https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs.amd64.gz | zcat > $F && chmod +x $F
 ```
 
-### Max OSX
-
-```
-F=swiftfs curl -sL https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs-osx.amd64.gz | zcat > $F && chmod +x $F
-```
 
 ## Use
 
