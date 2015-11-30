@@ -19,17 +19,18 @@ import (
 type ObjectFile struct {
 	swift *openstack.Swift
 
-	Inode *nodefs.Inode
-	name  string
-	file  *os.File
-	lock  sync.Mutex
+	Inode  *nodefs.Inode
+	name   string
+	file   *os.File
+	lock   sync.Mutex
+	object *openstack.Object
 
 	needUpload bool
 
 	nodefs.File
 }
 
-func NewObjectFile(name string, swift *openstack.Swift) (*ObjectFile, error) {
+func NewObjectFile(name string, swift *openstack.Swift, object *openstack.Object) (*ObjectFile, error) {
 	filename := "objfs" + strings.Replace(name, "/", "-", -1)
 	f, err := os.OpenFile(filepath.Join(os.TempDir(), filename), os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -43,6 +44,7 @@ func NewObjectFile(name string, swift *openstack.Swift) (*ObjectFile, error) {
 		swift:      swift,
 		file:       f,
 		needUpload: false,
+		object:     object,
 	}
 
 	if err := o.download(); err != nil {
@@ -65,6 +67,7 @@ func (o *ObjectFile) download() error {
 		log.Warnf("Can't copy %s to tmp-file. %v", o.name, err)
 		return err
 	}
+
 	return nil
 }
 
@@ -126,6 +129,14 @@ func (o *ObjectFile) Flush() fuse.Status {
 	}
 	o.lock.Unlock()
 
+	if err != nil {
+		return fuse.ToStatus(err)
+	}
+
+	stat, err := os.Stat(o.file.Name())
+	if err == nil {
+		o.object.Size = uint64(stat.Size())
+	}
 	return fuse.ToStatus(err)
 }
 

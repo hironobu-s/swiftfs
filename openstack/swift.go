@@ -22,43 +22,11 @@ const (
 	DEFAULT_ACCOUNT_QUOTA = 1024 * 1024 * 1024 * 1024 * 100 // 100TB
 )
 
-const (
-	FILE = iota
-	DIRECTORY
-)
-
-type Container struct {
-	Name  string
-	Quota uint64
-	Used  uint64
-	Count uint64
-}
-
-type ObjectList []Object
-
-func (list ObjectList) Find(name string) *Object {
-	// TODO: more efficiency
-	for _, obj := range list {
-		if obj.Name == name {
-			return &obj
-		}
-	}
-	return nil
-}
-
-type Object struct {
-	Name         string
-	Body         io.ReadCloser
-	Size         uint64
-	LastModified time.Time
-	Type         int
-}
-
 type Swift struct {
 	client *gophercloud.ServiceClient
 
 	containerName   string
-	objectListSize  int
+	ObjectListSize  int
 	authOptions     gophercloud.AuthOptions
 	endpointOptions gophercloud.EndpointOpts
 }
@@ -121,12 +89,12 @@ func (s *Swift) Auth() error {
 	return nil
 }
 
-func (s *Swift) List() (list ObjectList) {
+func (s *Swift) List() (list *ObjectList) {
 	pager := swiftobjects.List(s.client, s.containerName, swiftobjects.ListOpts{
 		Full: true,
 	})
 
-	list = make(ObjectList, s.objectListSize)
+	list = NewObjectList()
 	var i = 0
 	pager.EachPage(func(page pagination.Page) (bool, error) {
 		objlist, err := swiftobjects.ExtractInfo(page)
@@ -155,13 +123,7 @@ func (s *Swift) List() (list ObjectList) {
 				t = FILE
 			}
 
-			list = append(list, Object{
-				Name:         o.Name,
-				Body:         nil,
-				Size:         uint64(o.Bytes),
-				LastModified: lastmodified,
-				Type:         t,
-			})
+			list.Set(o.Name, uint64(o.Bytes), lastmodified, t)
 			i++
 		}
 

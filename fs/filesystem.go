@@ -24,7 +24,7 @@ type fileSystem struct {
 	createContainer bool
 
 	swift      *openstack.Swift
-	objectList openstack.ObjectList
+	objectList *openstack.ObjectList
 
 	lock sync.Mutex
 
@@ -77,6 +77,9 @@ func (fs *fileSystem) Mount() (server *fuse.Server, err error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// initialize object-list
+	fs.buildObjectList()
 
 	return server, nil
 }
@@ -167,7 +170,7 @@ func (fs *fileSystem) OpenDir(dirname string, context *fuse.Context) (c []fuse.D
 
 	entries := make([]fuse.DirEntry, 0, 1000)
 
-	for _, obj := range fs.objectList {
+	for _, obj := range fs.objectList.List() {
 		dir := filepath.Dir(obj.Name)
 		if dir == "." {
 			dir = ""
@@ -198,21 +201,25 @@ func (fs *fileSystem) Create(name string, flags uint32, mode uint32, context *fu
 
 	data, err := ioutil.TempFile("", "")
 	if err != nil {
-		log.Debugf("Temp Create Error: %v", err)
-		return nil, fuse.ENOSYS
+		return nil, fuse.ToStatus(err)
 	}
 	defer os.Remove(data.Name())
 	defer data.Close()
 
 	err = fs.swift.Upload(name, data)
 	if err != nil {
-		log.Debugf("Temp Create Error: %v", err)
+		log.Debugf("Upload failed: %v", err)
 		return nil, fuse.ENOSYS
 	}
 
-	fs.buildObjectList()
+	stat, err := os.Stat(data.Name())
+	if err != nil {
+		return nil, fuse.ToStatus(err)
+	}
 
-	file, err = NewObjectFile(name, fs.swift)
+	obj := fs.objectList.Set(name, uint64(stat.Size()), time.Now(), openstack.FILE)
+
+	file, err = NewObjectFile(name, fs.swift, obj)
 	if err != nil {
 		log.Debugf("OBJECT ERROR: %v", err)
 		return nil, fuse.ENOSYS
@@ -223,7 +230,8 @@ func (fs *fileSystem) Create(name string, flags uint32, mode uint32, context *fu
 func (fs *fileSystem) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
 	log.Debugf("Open: %s, flags: %d", name, flags)
 
-	file, err := NewObjectFile(name, fs.swift)
+	obj := fs.objectList.Find(name)
+	file, err := NewObjectFile(name, fs.swift, obj)
 	if err != nil {
 		log.Debugf("OBJECT ERROR: %v", err)
 		return nil, fuse.ENOSYS
@@ -239,7 +247,7 @@ func (fs *fileSystem) Unlink(name string, context *fuse.Context) (code fuse.Stat
 		return fuse.ENOSYS
 	}
 
-	fs.buildObjectList()
+	fs.objectList.Delete(name)
 
 	return fuse.OK
 }
@@ -284,9 +292,7 @@ func (fs *fileSystem) Mkdir(name string, mode uint32, context *fuse.Context) fus
 		return fuse.ENOSYS
 
 	} else {
-		// refresh object list
-		fs.buildObjectList()
-
+		fs.objectList.Set(name, 4094, time.Now(), openstack.DIRECTORY)
 		return fuse.OK
 	}
 }
@@ -305,12 +311,12 @@ func (fs *fileSystem) Rename(oldName string, newName string, context *fuse.Conte
 	err = fs.swift.Delete(oldName)
 	if err != nil {
 		log.Debugf("Delete Error: %v", err)
-
-		fs.buildObjectList()
 		return fuse.ENOSYS
 	}
 
-	fs.buildObjectList()
+	obj := fs.objectList.Find(oldName)
+	fs.objectList.Set(newName, obj.Size, time.Now(), obj.Type)
+	fs.objectList.Delete(oldName)
 
 	fs.lock.Unlock()
 	return fuse.OK
@@ -321,7 +327,7 @@ func (fs *fileSystem) Rmdir(name string, context *fuse.Context) (code fuse.Statu
 	if err := fs.swift.RemoveDirectory(name); err != nil {
 		return fuse.ENOSYS
 	} else {
-		fs.buildObjectList()
+		fs.objectList.Delete(name)
 		return fuse.OK
 	}
 }
