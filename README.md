@@ -1,5 +1,7 @@
 # SwiftFS
 
+[English Document](README.en.md)
+
 SwiftFSはOpenStack Swift[^1]のコンテナをFUSE(Filesystem in Userspace)を使用しマウントするファイルシステムです。
 
 [^1]: OpenStackの分散オブジェクトストレージシステム
