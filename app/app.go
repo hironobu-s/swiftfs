@@ -61,11 +61,12 @@ func Run() {
 		server, err := fs.Mount()
 		if err != nil {
 			log.Warnf("%v", err)
-			afterDaemonize(err)
 			return
 		}
 
-		afterDaemonize(nil)
+		if !conf.Debug {
+			afterDaemonize(nil)
+		}
 
 		// main loop
 		log.Debugf("Swiftfs process with pid %d started", syscall.Getpid())

@@ -61,7 +61,7 @@ func (c *Config) GetFlags() []cli.Flag {
 
 		cli.BoolFlag{
 			Name:  "no-daemon",
-			Usage: "Start an swiftfs process as a foreground (for debugging)",
+			Usage: "Start an swiftfs process as a foreground (imply --debug)",
 		},
 
 		cli.StringFlag{
@@ -123,8 +123,15 @@ func (c *Config) GetFlags() []cli.Flag {
 }
 
 func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
+	// No daemon mode
+	c.NoDaemon = ctx.Bool("no-daemon")
+
 	// Debug mode
-	c.Debug = ctx.Bool("debug")
+	if c.NoDaemon {
+		c.Debug = true
+	} else {
+		c.Debug = ctx.Bool("debug")
+	}
 	if c.Debug {
 		log.SetLevel(log.DebugLevel)
 
@@ -169,9 +176,6 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 		return err
 	}
 	log.Debugf("Mount point: %s", c.MountPoint)
-
-	// No daemon mode
-	c.NoDaemon = ctx.Bool("no-daemon")
 
 	// OpenStack
 	c.IdentityEndpoint = ctx.String("os-auth-url")
