@@ -50,12 +50,10 @@ func TestSetConfigFromContext(t *testing.T) {
 		"--debug",
 		"--no-daemon",
 		"--logfile=log.txt",
-		"--driver=openstack",
 		"--create-container",
 		"testcontainer",
 		"testmountpoint",
 	}
-
 	defer os.Remove("log.txt")
 
 	set.Parse(testargs)
@@ -86,9 +84,5 @@ func TestSetConfigFromContext(t *testing.T) {
 
 	if filepath.Base(config.MountPoint) != "testmountpoint" {
 		t.Errorf("The config parameter \"MountPoint\" is incorrect [%s]", filepath.Base(config.MountPoint))
-	}
-
-	if config.Driver.DriverName() != "OpenStack Swift" {
-		t.Errorf("DriverName is incorrect [%s]", config.Driver.DriverName())
 	}
 }
