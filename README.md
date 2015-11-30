@@ -1,17 +1,18 @@
 # SwiftFS
 
-[Japanese Document](README.ja.md)
+SwiftFSはOpenStack Swift[^1]のコンテナをFUSE(Filesystem in Userspace)を使用しマウントするファイルシステムです。
 
-SwiftFS is the file system to mount "Swift" OpenStack Object Storage via FUSE. This product targets for Unix flatforms.
+[^1]: OpenStackの分散オブジェクトストレージシステム
 
-This product may works on some OpenStack environments. We are testing on the following platforms.
+## 動作確認環境
 
-- ConoHa Object Storage (https://www.conoha.jp/)
+- ConoHaオブジェクトストレージ (https://www.conoha.jp/)
 - Rackspace Cloud Files (http://www.rackspace.com/cloud/files)
 
-## Install
 
-Please download an executable file from [GitHub Release](https://github.com/hironobu-s/swiftfs/releases).
+## インストール
+
+以下のコマンドを実行することで、カレントディレクトリにswiftfsコマンドがインストールされます。他のパスにインストールする場合は、冒頭の変数を書き換えて下さい。
 
 ### Linux(amd64)
 
@@ -25,18 +26,13 @@ F=swiftfs curl -sL https://github.com/hironobu-s/swiftfs/releases/download/curre
 F=swiftfs curl -sL https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs-osx.amd64.gz | zcat > $F && chmod +x $F
 ```
 
-## Use
+## 使い方
 
-### Authentication 
+### 認証情報の設定
 
-You'll need to set some options for authentication with OpenStack APIs, 
-
-**Via command-line arguments**
-
-You can use options begining with "os-" to authenticate. 
+まず、OpenStack APIへの認証情報を設定する必要があります。コマンドラインオプションと環境変数のどちらかで渡すことができます。
 
 ```shell
-$ swiftfs -h
 --os-user-id                 (OpenStack) User ID [$OS_USERID]
 --os-username                (OpenStack) Username [$OS_USERNAME]
 --os-password                (OpenStack) Password [$OS_PASSWORD]
@@ -46,65 +42,49 @@ $ swiftfs -h
 --os-region-name             (OpenStack) Region Name [$OS_REGION_NAME]
 ```
 
-**Via environment variables**
+### マウント
 
-Setting environment variables to authenticate.
-
-```
-export OS_USERID=***
-export OS_USERNAME=***
-export OS_PASSWORD=***
-export OS_TENANT_ID=***
-export OS_TENANT_NAME=***
-export OS_AUTH_URL=***
-export OS_REGION_NAME=***
-```
-
-
-### Mount
-
-You can run swiftfs command with container-name and mountpoint.
+swiftfsコマンドにコンテナ名マウントポイントを指定します。
 
 ```shell
 $ swiftfs CONTAINER-NAME MOUNTPOINT
 ```
 
-### Unmount
+### アンマウント
 
-Also, you can use fusermount command.
+fusermountコマンドを使用します。
 
 ```shell
 $ fusermount -u MOUNTPOINT
 ```
 
-### Options
+### オプション
 
-Print out a option list with "-h" option.
+swiftfsコマンドに-hオプションをつけて実行すると、オプションの一覧が表示されます。
 
 **--debug**
 
-Output debug information
+デバッグ出力をONにします
 
 **--no-daemon**
 
-Start an swiftfs process as a foreground (for debugging)
+swiftfsコマンドをフォアグラウンドで実行します。デバッグ用です。
 
 **--logfile, -l**
 
-The logfile name that appends some information instead of stdout/stderr
+指定したファイルにデバッグ情報などが書き込まれます。
 
 **--create-container, -c**
 
-Create a container if is not exist
+コマンドライン引数で指定されたコンテナが存在しなかった場合にコンテナを作成します。このオプションを指定しない場合、コンテナが存在しない場合エラーになります。
 
+## やることリスト
 
-## Todo
-
-- Support chmod/chown functions
-- Support HTTP compression(net/http package does not support it)
-- Reduce the number of building ObjectList
-- Performance inprovement when handle a huge number of objects
-- Fix bugs
+- chmod/chownのサポート
+- HTTP圧縮のサポート(net/httpパッケージが未サポート)
+- ObjectListの構築回数を減らしたい
+- オブジェクト数が増えた時のパフォーマンス確保
+- バグフィクス
 
 ## License
 
