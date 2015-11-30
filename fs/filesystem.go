@@ -144,6 +144,7 @@ func (fs *fileSystem) GetAttr(name string, context *fuse.Context) (*fuse.Attr, f
 				Mode:  fuse.S_IFDIR | 0755,
 				Size:  4096,
 				Nlink: 0,
+				Mtime: uint64(obj.LastModified.Unix()),
 			}
 
 		} else {
