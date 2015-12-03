@@ -1,11 +1,7 @@
 package fs
 
 import (
-	"fmt"
-	"io/ioutil"
-	"os"
 	"os/user"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -15,28 +11,29 @@ import (
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"github.com/hanwen/go-fuse/fuse/pathfs"
 	"github.com/hironobu-s/swiftfs/config"
-	"github.com/hironobu-s/swiftfs/openstack"
+	"github.com/hironobu-s/swiftfs/mapper"
 )
 
-type fileSystem struct {
-	mountPoint      string
+const (
+	BLCOK_SIZE = 512
+)
+
+type objectFileSystem struct {
 	containerName   string
 	createContainer bool
 
-	swift      *openstack.Swift
-	objectList *openstack.ObjectList
+	mapper *mapper.ObjectMapper
 
 	lock sync.Mutex
 
 	pathfs.FileSystem
 }
 
-func NewFileSystem(c *config.Config) *fileSystem {
-	fs := &fileSystem{
-		swift:           openstack.NewSwift(c),
-		mountPoint:      c.MountPoint,
+func NewObjectFileSystem(c *config.Config, mapper *mapper.ObjectMapper) *objectFileSystem {
+	fs := &objectFileSystem{
 		containerName:   c.ContainerName,
 		createContainer: c.CreateContainer,
+		mapper:          mapper,
 		lock:            sync.Mutex{},
 
 		FileSystem: pathfs.NewDefaultFileSystem(),
@@ -44,57 +41,13 @@ func NewFileSystem(c *config.Config) *fileSystem {
 	return fs
 }
 
-func (fs *fileSystem) Mount() (server *fuse.Server, err error) {
-	if err = fs.swift.Auth(); err != nil {
-		return nil, err
-	}
-
-	if fs.createContainer {
-		if err = fs.swift.CreateContainer(); err != nil {
-			return nil, err
-		}
-
-	} else {
-		_, err := fs.swift.GetContainer()
-		if err != nil {
-			return nil, fmt.Errorf("Container \"%s\" not found", fs.containerName)
-		}
-	}
-
-	path := pathfs.NewPathNodeFs(fs, nil)
-	con := nodefs.NewFileSystemConnector(path.Root(), &nodefs.Options{
-		EntryTimeout:    time.Second,
-		AttrTimeout:     time.Second,
-		NegativeTimeout: time.Second,
-	})
-
-	opts := &fuse.MountOptions{
-		Name:   config.APP_NAME,
-		FsName: config.APP_NAME,
-	}
-
-	server, err = fuse.NewServer(con.RawFS(), fs.mountPoint, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// initialize object-list
-	fs.buildObjectList()
-
-	return server, nil
-}
-
-func (fs *fileSystem) buildObjectList() {
-	fs.objectList = fs.swift.List()
-}
-
 // ------------------------
 
-func (fs *fileSystem) String() string {
+func (fs *objectFileSystem) String() string {
 	return "swiftfs"
 }
 
-func (fs *fileSystem) getCurrentUser() fuse.Owner {
+func (fs *objectFileSystem) getCurrentUser() fuse.Owner {
 	owner := fuse.Owner{
 		Uid: 0,
 		Gid: 0,
@@ -120,12 +73,15 @@ func (fs *fileSystem) getCurrentUser() fuse.Owner {
 	return owner
 }
 
-func (fs *fileSystem) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
+func (fs *objectFileSystem) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
 	var attr *fuse.Attr
 	var owner = fs.getCurrentUser()
 
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
+
 	if name == "" {
-		log.Debugf("GetAttr: (root)")
+		//log.Debugf("GetAttr: (root)")
 
 		attr = &fuse.Attr{
 			Owner: owner,
@@ -135,136 +91,135 @@ func (fs *fileSystem) GetAttr(name string, context *fuse.Context) (*fuse.Attr, f
 		return attr, fuse.OK
 	}
 
-	obj := fs.objectList.Find(name)
-	if obj != nil {
-		if obj.Type == openstack.DIRECTORY {
-			log.Debugf("GetAttr: %s(directory)", name)
-			attr = &fuse.Attr{
-				Owner: owner,
-				Mode:  fuse.S_IFDIR | 0755,
-				Size:  4096,
-				Nlink: 0,
-				Mtime: uint64(obj.LastModified.Unix()),
-			}
-
-		} else {
-			log.Debugf("GetAttr: %s", name)
-			attr = &fuse.Attr{
-				Owner: owner,
-				Mode:  fuse.S_IFREG | 0644,
-				Size:  obj.Size,
-				Mtime: uint64(obj.LastModified.Unix()),
-			}
-		}
-		return attr, fuse.OK
-
-	} else {
-		log.Debugf("GetAttr: %s(no entry)", name)
+	obj, ok := fs.mapper.Get(name)
+	if !ok {
+		//log.Debugf("GetAttr: %s(no entry)", name)
 		return nil, fuse.ENOENT
 	}
+
+	switch obj.Type {
+	case mapper.FILE:
+		log.Debugf("GetAttr: %s(File) size:%d", obj.Name, obj.Size)
+
+		attr = &fuse.Attr{
+			Owner:  owner,
+			Mode:   fuse.S_IFREG | 0644,
+			Size:   obj.Size,
+			Blocks: obj.Size / BLCOK_SIZE,
+			Mtime:  uint64(obj.Mtime.Unix()),
+		}
+
+	case mapper.DIRECTORY:
+		log.Debugf("GetAttr: %s(Directory) size:%d", obj.Name, obj.Size)
+		attr = &fuse.Attr{
+			Owner:  owner,
+			Mode:   fuse.S_IFDIR | 0755,
+			Size:   obj.Size,
+			Blocks: obj.Size / BLCOK_SIZE,
+			Mtime:  uint64(obj.Mtime.Unix()),
+		}
+	}
+	return attr, fuse.OK
 }
 
-func (fs *fileSystem) OpenDir(dirname string, context *fuse.Context) (c []fuse.DirEntry, code fuse.Status) {
+func (fs *objectFileSystem) OpenDir(dirname string, context *fuse.Context) (c []fuse.DirEntry, code fuse.Status) {
 	log.Debugf("OpenDir: %s", dirname)
 
-	fs.buildObjectList()
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
 
 	entries := make([]fuse.DirEntry, 0, 1000)
-
-	for _, obj := range fs.objectList.List() {
-		dir := filepath.Dir(obj.Name)
-		if dir == "." {
-			dir = ""
-		}
-
-		if dirname != dir {
-			continue
-		}
-		log.Debugf("append dir entry: %s", filepath.Base(obj.Name))
+	for _, obj := range fs.mapper.OpenDir(dirname) {
+		log.Debugf("append dir entry: %s", obj.Path)
 
 		var mode uint32
-		if obj.Type == openstack.DIRECTORY {
+		switch obj.Type {
+		case mapper.DIRECTORY:
 			mode = fuse.S_IFDIR
-		} else {
+		case mapper.FILE:
 			mode = fuse.S_IFREG
+		default:
+			continue
 		}
-		entries = append(entries, fuse.DirEntry{Name: filepath.Base(obj.Name), Mode: mode})
-
+		entries = append(entries, fuse.DirEntry{Name: obj.Name, Mode: mode})
 	}
 
 	return entries, fuse.OK
 }
 
-func (fs *fileSystem) Create(name string, flags uint32, mode uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
+func (fs *objectFileSystem) Create(name string, flags uint32, mode uint32, context *fuse.Context) (nodefs.File, fuse.Status) {
 	log.Debugf("Create: %s, flags: %d", name, flags)
 
-	var err error
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
 
-	data, err := ioutil.TempFile("", "")
+	// Add to mapper
+	obj, err := fs.mapper.Create(name)
 	if err != nil {
-		return nil, fuse.ToStatus(err)
-	}
-	defer os.Remove(data.Name())
-	defer data.Close()
-
-	err = fs.swift.Upload(name, data)
-	if err != nil {
-		log.Debugf("Upload failed: %v", err)
-		return nil, fuse.ENOSYS
+		log.Warnf("Can't append to mapper %v", err)
+		return nodefs.NewDefaultFile(), fuse.EIO
 	}
 
-	stat, err := os.Stat(data.Name())
-	if err != nil {
-		return nil, fuse.ToStatus(err)
+	file := NewObjectFile(name, obj)
+	if err := file.OpenLocalFile(flags, mode, context); err != nil {
+		log.Warnf("Create: OpenLocalFile() error %v", err)
+		return file, fuse.EIO
 	}
 
-	obj := fs.objectList.Set(name, uint64(stat.Size()), time.Now(), openstack.FILE)
-
-	file, err = NewObjectFile(name, fs.swift, obj)
-	if err != nil {
-		log.Debugf("OBJECT ERROR: %v", err)
-		return nil, fuse.ENOSYS
-	}
 	return file, fuse.OK
 }
 
-func (fs *fileSystem) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
+func (fs *objectFileSystem) Open(name string, flags uint32, context *fuse.Context) (nodefs.File, fuse.Status) {
 	log.Debugf("Open: %s, flags: %d", name, flags)
 
-	obj := fs.objectList.Find(name)
-	file, err := NewObjectFile(name, fs.swift, obj)
-	if err != nil {
-		log.Debugf("OBJECT ERROR: %v", err)
-		return nil, fuse.ENOSYS
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
+
+	obj, ok := fs.mapper.Get(name)
+	if !ok {
+		log.Warnf("Open: %s(no entry)", name)
+		return nil, fuse.ENOENT
+
+	} else if obj.Type == mapper.DIRECTORY {
+		log.Warnf("Open: %s(DIRECTORY detected)", name)
+		return nil, fuse.ENOENT
+	}
+
+	file := NewObjectFile(name, obj)
+	if err := file.OpenLocalFile(flags, 0, context); err != nil {
+		log.Warnf("Open() error %v", err)
+		return file, fuse.EIO
 	}
 
 	return file, fuse.OK
 }
 
-func (fs *fileSystem) Unlink(name string, context *fuse.Context) (code fuse.Status) {
-	err := fs.swift.Delete(name)
-	if err != nil {
-		log.Debugf("Delete Error: %v", err)
-		return fuse.ENOSYS
+func (fs *objectFileSystem) Unlink(name string, context *fuse.Context) (code fuse.Status) {
+	log.Debugf("Unlink: %s", name)
+
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
+
+	if fs.mapper.Delete(name) == nil {
+		return fuse.OK
+	} else {
+		log.Warnf("Unlink fail(): %s", name)
+		return fuse.ENOENT
 	}
-
-	fs.objectList.Delete(name)
-
-	return fuse.OK
 }
 
-func (fs *fileSystem) Chmod(name string, mode uint32, context *fuse.Context) (code fuse.Status) {
+func (fs *objectFileSystem) Chmod(name string, mode uint32, context *fuse.Context) (code fuse.Status) {
 	log.Debugf("Chmod %s", name)
 	return fuse.OK
 }
 
-func (fs *fileSystem) Chown(name string, uid uint32, gid uint32, context *fuse.Context) (code fuse.Status) {
+func (fs *objectFileSystem) Chown(name string, uid uint32, gid uint32, context *fuse.Context) (code fuse.Status) {
 	log.Debugf("Chown %s", name)
 	return fuse.OK
 }
 
-func (fs *fileSystem) StatFs(name string) *fuse.StatfsOut {
-	container, err := fs.swift.GetContainer()
+func (fs *objectFileSystem) StatFs(name string) *fuse.StatfsOut {
+	container, err := fs.mapper.Stat()
 
 	if err == nil {
 		return &fuse.StatfsOut{
@@ -282,59 +237,53 @@ func (fs *fileSystem) StatFs(name string) *fuse.StatfsOut {
 	}
 }
 
-func (fs *fileSystem) Link(oldName string, newName string, context *fuse.Context) (code fuse.Status) {
+func (fs *objectFileSystem) Link(oldName string, newName string, context *fuse.Context) (code fuse.Status) {
 	log.Debugf("Link %s", oldName)
 	return fuse.ENOSYS
 }
 
-func (fs *fileSystem) Mkdir(name string, mode uint32, context *fuse.Context) fuse.Status {
+func (fs *objectFileSystem) Mkdir(name string, mode uint32, context *fuse.Context) fuse.Status {
 	log.Debugf("Mkdir %s", name)
-	if err := fs.swift.MakeDirectory(name); err != nil {
-		return fuse.ENOSYS
-
-	} else {
-		fs.objectList.Set(name, 4094, time.Now(), openstack.DIRECTORY)
-		return fuse.OK
-	}
-}
-
-func (fs *fileSystem) Rename(oldName string, newName string, context *fuse.Context) (code fuse.Status) {
-	log.Debugf("Rename from %s to %s", oldName, newName)
 
 	fs.lock.Lock()
-
-	err := fs.swift.Copy(oldName, newName)
+	defer fs.lock.Unlock()
+	_, err := fs.mapper.Mkdir(name)
 	if err != nil {
-		log.Debugf("Copy Error: %v", err)
-		fs.lock.Unlock()
-		return fuse.ENOSYS
+		log.Debugf("Mkdir fail() %s %v", name, err)
+		return fuse.EIO
 	}
-
-	err = fs.swift.Delete(oldName)
-	if err != nil {
-		log.Debugf("Delete Error: %v", err)
-		fs.lock.Unlock()
-		return fuse.ENOSYS
-	}
-
-	obj := fs.objectList.Find(oldName)
-	fs.objectList.Set(newName, obj.Size, time.Now(), obj.Type)
-	fs.objectList.Delete(oldName)
-
-	fs.lock.Unlock()
 	return fuse.OK
 }
 
-func (fs *fileSystem) Rmdir(name string, context *fuse.Context) (code fuse.Status) {
+func (fs *objectFileSystem) Rename(oldName string, newName string, context *fuse.Context) (code fuse.Status) {
+	log.Debugf("Rename from %s to %s", oldName, newName)
+
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
+
+	err := fs.mapper.Rename(oldName, newName)
+	if err != nil {
+		log.Debugf("Rename fail() %s %s %v", oldName, newName, err)
+		return fuse.EIO
+	}
+
+	return fuse.OK
+}
+
+func (fs *objectFileSystem) Rmdir(name string, context *fuse.Context) (code fuse.Status) {
 	log.Debugf("Rmdir %s", name)
-	if err := fs.swift.RemoveDirectory(name); err != nil {
-		return fuse.ENOSYS
-	} else {
-		fs.objectList.Delete(name)
+
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
+
+	if fs.mapper.Rmdir(name) == nil {
 		return fuse.OK
+	} else {
+		log.Warnf("Rmdir() fail %s", name)
+		return fuse.EIO
 	}
 }
 
-func (fs *fileSystem) Utimens(name string, Atime *time.Time, Mtime *time.Time, context *fuse.Context) (code fuse.Status) {
+func (fs *objectFileSystem) Utimens(name string, Atime *time.Time, Mtime *time.Time, context *fuse.Context) (code fuse.Status) {
 	return fuse.OK
 }

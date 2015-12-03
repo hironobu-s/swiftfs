@@ -2,82 +2,57 @@ package fs
 
 import (
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"os"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
-	"github.com/hironobu-s/swiftfs/openstack"
+	"github.com/hironobu-s/swiftfs/mapper"
 )
 
 type ObjectFile struct {
-	swift *openstack.Swift
+	name  string
+	inode *nodefs.Inode
 
-	Inode  *nodefs.Inode
-	name   string
-	file   *os.File
-	lock   sync.Mutex
-	object *openstack.Object
-
+	object     mapper.Object
+	localfile  *os.File
 	needUpload bool
+
+	//mapper *mapper.ObjectMapper
+	lock sync.Mutex
 
 	nodefs.File
 }
 
-func NewObjectFile(name string, swift *openstack.Swift, object *openstack.Object) (*ObjectFile, error) {
-	filename := "objfs" + strings.Replace(name, "/", "-", -1)
-	f, err := os.OpenFile(filepath.Join(os.TempDir(), filename), os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Debugf("NewObjectFile:%s tmpfile=%s", name, f.Name())
-	o := &ObjectFile{
-		Inode:      nil,
+func NewObjectFile(name string, obj mapper.Object) *ObjectFile {
+	f := &ObjectFile{
 		name:       name,
-		swift:      swift,
-		file:       f,
+		object:     obj,
+		lock:       sync.Mutex{},
 		needUpload: false,
-		object:     object,
+
+		File: nodefs.NewDefaultFile(),
 	}
 
-	if err := o.download(); err != nil {
-		return nil, err
-	}
-
-	return o, nil
+	return f
 }
 
-func (o *ObjectFile) download() error {
-	obj, err := o.swift.Get(o.name)
+func (o *ObjectFile) OpenLocalFile(flag uint32, mode uint32, context *fuse.Context) error {
+	var err error
+	o.localfile, err = o.object.Open(int(flag), os.FileMode(mode))
 	if err != nil {
-		log.Warnf("Error downloading %s. %v", o.name, err)
-		return err
+		return fmt.Errorf("[objectfile] Can't open file(%s) [%v]", o.name, err)
 	}
-	defer obj.Body.Close()
-
-	_, err = io.Copy(o.file, obj.Body)
-	if err != nil {
-		log.Warnf("Can't copy %s to tmp-file. %v", o.name, err)
-		return err
-	}
-
-	return nil
-}
-
-func (o *ObjectFile) InnerFile() nodefs.File {
 	return nil
 }
 
 func (o *ObjectFile) SetInode(n *nodefs.Inode) {
-	log.Debugf("SetInode %s", o.name)
-	o.Inode = n
+	log.Debugf("[objectfile] SetInode %s", o.name)
+	o.inode = n
 }
 
 func (o *ObjectFile) String() string {
@@ -85,101 +60,110 @@ func (o *ObjectFile) String() string {
 }
 
 func (o *ObjectFile) Read(buf []byte, off int64) (res fuse.ReadResult, code fuse.Status) {
+	log.Debugf("[objectfile] Read %s offset=%d bytes=%d", o.name, off, len(buf))
 	if off == 0 {
-		log.Debugf("Read %s offset=%d bytes=%d", o.file.Name(), off, len(buf))
 	}
 
 	o.lock.Lock()
-	res = fuse.ReadResultFd(o.file.Fd(), off, len(buf))
+	res = fuse.ReadResultFd(o.localfile.Fd(), off, len(buf))
 	o.lock.Unlock()
 
 	return res, fuse.OK
 }
 
 func (o *ObjectFile) Write(data []byte, off int64) (uint32, fuse.Status) {
+	log.Debugf("[objectfile] Write %s offset=%d, length=%d", o.name, off, len(data))
 	if off == 0 {
-		log.Debugf("Write %s offset=%d, length=%d", o.file.Name(), off, len(data))
 	}
 
 	o.lock.Lock()
+	n, err := o.localfile.WriteAt(data, off)
 	o.needUpload = true
-	n, err := o.file.WriteAt(data, off)
 	o.lock.Unlock()
+
+	if err != nil {
+		log.Warnf("[objectfile] Write() error %v", err)
+	}
 
 	return uint32(n), fuse.ToStatus(err)
 }
 
 func (o *ObjectFile) Release() {
-	log.Debugf("Release %s", o.file.Name())
+	log.Debugf("[objectfile] Release %s", o.name)
 
-	o.lock.Lock()
-	o.file.Close()
-	os.Remove(o.file.Name())
-	o.lock.Unlock()
+	if o.localfile != nil && o.needUpload {
+		o.lock.Lock()
+		if err := o.object.Upload(); err != nil {
+			log.Warnf("[objectfile] Upload() error %s %v", o.name, err)
+		}
+
+		o.localfile.Close()
+		o.lock.Unlock()
+	}
 }
 
 func (o *ObjectFile) Flush() fuse.Status {
-	log.Debugf("Flush  %s", o.file.Name())
+	log.Debugf("[objectfile] Flush  %s", o.name)
 
-	o.lock.Lock()
-	var err error
-	if o.needUpload {
-		err = o.swift.Upload(o.name, o.file)
-		o.needUpload = false
-	}
-	o.lock.Unlock()
-
-	if err != nil {
-		return fuse.ToStatus(err)
+	if o.localfile != nil {
+		if err := o.object.Flush(); err != nil {
+			log.Warnf("[objectfile] Flush() error %s %v", o.name, err)
+			return fuse.ToStatus(err)
+		}
 	}
 
-	stat, err := os.Stat(o.file.Name())
-	if err == nil {
-		o.object.Size = uint64(stat.Size())
-	}
-	return fuse.ToStatus(err)
+	return fuse.OK
 }
 
 func (o *ObjectFile) Fsync(flags int) (code fuse.Status) {
-	log.Debugf("Fsync %s", o.name)
+	log.Debugf("[objectfile] Fsync %s", o.name)
 
 	o.lock.Lock()
-	r := fuse.ToStatus(syscall.Fsync(int(o.file.Fd())))
-	o.swift.Upload(o.name, o.file)
+	r := fuse.ToStatus(syscall.Fsync(int(o.localfile.Fd())))
 	o.lock.Unlock()
 
 	return r
 }
 
 func (o *ObjectFile) Truncate(size uint64) fuse.Status {
-	log.Debugf("Truncate %s", o.name)
+	log.Debugf("[objectfile] Truncate %s", o.name)
 
 	o.lock.Lock()
-	r := fuse.ToStatus(syscall.Ftruncate(int(o.file.Fd()), int64(size)))
+	r := fuse.ToStatus(syscall.Ftruncate(int(o.localfile.Fd()), int64(size)))
+	o.needUpload = true
 	o.lock.Unlock()
 
 	return r
 }
 
 func (o *ObjectFile) Chmod(mode uint32) fuse.Status {
-	return fuse.OK
+	if err := os.Chmod(o.localfile.Name(), os.FileMode(mode)); err != nil {
+		return fuse.ToStatus(err)
+	} else {
+		return fuse.OK
+	}
 }
 
 func (o *ObjectFile) Chown(uid uint32, gid uint32) fuse.Status {
-	return fuse.OK
+	if err := os.Chown(o.localfile.Name(), int(uid), int(gid)); err != nil {
+		return fuse.ToStatus(err)
+	} else {
+		return fuse.OK
+	}
 }
 
 func (o *ObjectFile) GetAttr(a *fuse.Attr) fuse.Status {
-	log.Debugf("GetAttr(obj) %s", o.file.Name())
+	log.Debugf("[objectfile] GetAttr(obj) %s", o.name)
 
-	o.lock.Lock()
-	st := syscall.Stat_t{}
-	err := syscall.Fstat(int(o.file.Fd()), &st)
-	o.lock.Unlock()
+	stat, err := o.localfile.Stat()
 	if err != nil {
-		return fuse.ToStatus(err)
+		return fuse.EIO
 	}
-	a.FromStat(&st)
+	st, ok := stat.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fuse.ENODEV
+	}
+	a.FromStat(st)
 
 	return fuse.OK
 }

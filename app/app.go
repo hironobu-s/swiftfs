@@ -9,8 +9,12 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
+	"github.com/hanwen/go-fuse/fuse"
+	"github.com/hanwen/go-fuse/fuse/nodefs"
+	"github.com/hanwen/go-fuse/fuse/pathfs"
 	"github.com/hironobu-s/swiftfs/config"
 	"github.com/hironobu-s/swiftfs/fs"
+	"github.com/hironobu-s/swiftfs/mapper"
 )
 
 const (
@@ -54,11 +58,18 @@ func Run() {
 			}
 		}
 
-		log.Debug("Create a filesystem")
-		fs := fs.NewFileSystem(conf)
+		log.Debug("Create mapper")
+		mapper, err := mapper.NewObjectMapper(conf)
+		if err != nil {
+			log.Warnf("%v", err)
+			return
+		}
 
-		log.Debug("Mount a filesystem")
-		server, err := fs.Mount()
+		log.Debug("Create filesystem")
+		objectFs := fs.NewObjectFileSystem(conf, mapper)
+
+		log.Debug("Mount filesystem")
+		server, err := mount(objectFs, conf.MountPoint)
 		if err != nil {
 			log.Warnf("%v", err)
 			return
@@ -76,6 +87,27 @@ func Run() {
 	}
 
 	app.RunAndExitOnError()
+}
+
+func mount(fs pathfs.FileSystem, mountpoint string) (server *fuse.Server, err error) {
+	path := pathfs.NewPathNodeFs(fs, nil)
+	con := nodefs.NewFileSystemConnector(path.Root(), &nodefs.Options{
+		EntryTimeout:    time.Second,
+		AttrTimeout:     time.Second,
+		NegativeTimeout: time.Second,
+	})
+
+	opts := &fuse.MountOptions{
+		Name:   config.APP_NAME,
+		FsName: config.APP_NAME,
+	}
+
+	server, err = fuse.NewServer(con.RawFS(), mountpoint, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return server, nil
 }
 
 // Spawn a child process and waiting for completing the launch.
@@ -139,6 +171,7 @@ func daemonize(c *cli.Context, conf *config.Config) (err error) {
 }
 
 func afterDaemonize(err error) {
+	return
 	// Ignore SIGCHLD signal
 	signal.Ignore(syscall.SIGCHLD)
 

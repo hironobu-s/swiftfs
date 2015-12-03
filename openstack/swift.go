@@ -6,21 +6,24 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/hironobu-s/swiftfs/config"
 	"github.com/rackspace/gophercloud"
 	"github.com/rackspace/gophercloud/openstack"
-	"github.com/rackspace/gophercloud/openstack/objectstorage/v1/accounts"
-	swiftcontainers "github.com/rackspace/gophercloud/openstack/objectstorage/v1/containers"
-	swiftobjects "github.com/rackspace/gophercloud/openstack/objectstorage/v1/objects"
+	"github.com/rackspace/gophercloud/openstack/objectstorage/v1/objects"
 	"github.com/rackspace/gophercloud/pagination"
+	"github.com/rackspace/gophercloud/rackspace/objectstorage/v1/accounts"
+	"github.com/rackspace/gophercloud/rackspace/objectstorage/v1/containers"
 )
 
 const (
 	DEFAULT_ACCOUNT_QUOTA = 1024 * 1024 * 1024 * 1024 * 100 // 100TB
 )
+
+type SwiftObject struct {
+	objects.Object
+}
 
 type Swift struct {
 	client *gophercloud.ServiceClient
@@ -89,54 +92,40 @@ func (s *Swift) Auth() error {
 	return nil
 }
 
-func (s *Swift) List() (list *ObjectList) {
-	pager := swiftobjects.List(s.client, s.containerName, swiftobjects.ListOpts{
-		Full: true,
-	})
+func (s *Swift) List() (objch chan objects.Object, n chan int) {
+	objch = make(chan objects.Object)
+	n = make(chan int)
 
-	list = NewObjectList()
-	var i = 0
-	pager.EachPage(func(page pagination.Page) (bool, error) {
-		objlist, err := swiftobjects.ExtractInfo(page)
-		if err != nil {
-			log.Debugf("%v\n", err)
-			return false, err
-		}
+	go func() {
+		pager := objects.List(s.client, s.containerName, objects.ListOpts{
+			Full: true,
+		})
 
-		for _, o := range objlist {
-			//log.Debugf("append object %s", o.Name)
-
-			// gophercloudがタイムゾーンを考慮しないで返してくるっぽい？
-			var lastmodified time.Time
-
-			o.LastModified += "Z"
-			lastmodified, err := time.Parse(time.RFC3339, o.LastModified)
+		i := 0
+		pager.EachPage(func(page pagination.Page) (bool, error) {
+			objlist, err := objects.ExtractInfo(page)
 			if err != nil {
-				log.Debugf("Invalid time format[%s]", o.LastModified)
-				lastmodified = time.Now()
+				log.Debugf("%v\n", err)
+				return false, err
 			}
 
-			var t int
-			if o.ContentType == "application/directory" {
-				t = DIRECTORY
-			} else {
-				t = FILE
+			for _, obj := range objlist {
+				objch <- obj
+				i++
 			}
 
-			list.Set(o.Name, uint64(o.Bytes), lastmodified, t)
-			i++
-		}
+			return true, nil
+		})
 
-		return true, nil
-	})
+		n <- i
+	}()
 
-	log.Debugf("(OpenStack) Fetch object list. number of objects is %d.", i)
-	return list
+	return objch, n
 }
 
 func (s *Swift) Upload(name string, data io.ReadSeeker) error {
-	opts := swiftobjects.CreateOpts{}
-	result := swiftobjects.Create(s.client, s.containerName, name, data, opts)
+	opts := objects.CreateOpts{}
+	result := objects.Create(s.client, s.containerName, name, data, opts)
 	if result.Err != nil {
 		return result.Err
 	}
@@ -144,43 +133,40 @@ func (s *Swift) Upload(name string, data io.ReadSeeker) error {
 }
 
 func (s *Swift) Delete(name string) error {
-	result := swiftobjects.Delete(s.client, s.containerName, name, nil)
+	result := objects.Delete(s.client, s.containerName, name, nil)
 	return result.Err
 }
 
-func (s *Swift) Get(name string) (obj Object, err error) {
-	obj = Object{}
-
+func (s *Swift) Get(name string) objects.DownloadResult {
 	log.Debugf("(OpenStack) Download object (%s)", name)
-	opts := swiftobjects.DownloadOpts{}
-	result := swiftobjects.Download(s.client, s.containerName, name, opts)
-	if result.Err != nil {
-		return obj, err
-	}
-
-	headers, err := result.Extract()
-	if err != nil {
-		return obj, err
-	}
-
-	obj.Name = name
-	obj.Body = result.Body
-	obj.Size = uint64(headers.ContentLength)
-	obj.LastModified = headers.LastModified
-
-	return obj, nil
+	opts := objects.DownloadOpts{}
+	return objects.Download(s.client, s.containerName, name, opts)
 }
 
-func (s *Swift) GetContainer() (container *Container, err error) {
-	m := new(sync.Mutex)
-	cerr := make(chan error)
-	container = &Container{
-		Name: s.containerName,
+func (s *Swift) Copy(oldName string, newName string) error {
+	log.Debugf("(OpenStack) Copy object from \"%s\" to \"%s\"", oldName, newName)
+
+	opts := objects.CopyOpts{
+		Destination: fmt.Sprintf("%s/%s", s.containerName, newName),
 	}
+	result := objects.Copy(s.client, s.containerName, oldName, opts)
+	return result.Err
+}
+
+type Container struct {
+	Quota uint64
+	Used  uint64
+	Count uint64
+}
+
+func (s *Swift) GetContainer() (container Container, err error) {
+	cerr := make(chan error)
+	m := &sync.Mutex{}
+	container = Container{}
 
 	// get account quota
 	go func(mm *sync.Mutex) {
-		account := accounts.Get(s.client, nil)
+		account := accounts.Get(s.client)
 		headers, err := account.ExtractHeader()
 		if err != nil {
 			cerr <- err
@@ -210,7 +196,7 @@ func (s *Swift) GetContainer() (container *Container, err error) {
 	go func(mm *sync.Mutex) {
 		var strval string
 
-		result := swiftcontainers.Get(s.client, s.containerName)
+		result := containers.Get(s.client, s.containerName)
 		if result.Err != nil {
 			cerr <- result.Err
 			return
@@ -248,7 +234,7 @@ func (s *Swift) GetContainer() (container *Container, err error) {
 	var i = 0
 	for i < 2 {
 		if err = <-cerr; err != nil {
-			return nil, err
+			return container, err
 		}
 		i++
 	}
@@ -256,37 +242,27 @@ func (s *Swift) GetContainer() (container *Container, err error) {
 	return container, nil
 }
 
-func (s *Swift) Copy(oldName string, newName string) error {
-	log.Debugf("(OpenStack) Copy object from \"%s\" to \"%s\"", oldName, newName)
-
-	opts := swiftobjects.CopyOpts{
-		Destination: fmt.Sprintf("%s/%s", s.containerName, newName),
-	}
-	result := swiftobjects.Copy(s.client, s.containerName, oldName, opts)
-	return result.Err
-}
-
 func (s *Swift) CreateContainer() error {
-	opts := swiftcontainers.CreateOpts{}
-	result := swiftcontainers.Create(s.client, s.containerName, opts)
+	opts := containers.CreateOpts{}
+	result := containers.Create(s.client, s.containerName, opts)
 	return result.Err
 }
 
 func (s *Swift) DeleteContainer() error {
-	result := swiftcontainers.Delete(s.client, s.containerName)
+	result := containers.Delete(s.client, s.containerName)
 	return result.Err
 }
 
 func (s *Swift) MakeDirectory(name string) error {
-	opts := swiftobjects.CreateOpts{
+	opts := objects.CreateOpts{
 		ContentType: "application/directory",
 	}
-	result := swiftobjects.Create(s.client, s.containerName, name, strings.NewReader(""), opts)
+	result := objects.Create(s.client, s.containerName, name, strings.NewReader(""), opts)
 	return result.Err
 }
 
 func (s *Swift) RemoveDirectory(name string) error {
-	opts := swiftobjects.DeleteOpts{}
-	result := swiftobjects.Delete(s.client, s.containerName, name, opts)
+	opts := objects.DeleteOpts{}
+	result := objects.Delete(s.client, s.containerName, name, opts)
 	return result.Err
 }

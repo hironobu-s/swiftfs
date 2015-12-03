@@ -21,6 +21,7 @@ type Config struct {
 	Logfile         *os.File // Need close() after use
 	MountPoint      string
 	CreateContainer bool
+	TempDirectory   string
 
 	// OpenStack credential
 	IdentityEndpoint string
@@ -42,7 +43,11 @@ type Config struct {
 func NewConfig() *Config {
 	config := &Config{
 		ObjectListSize: 1000,
+		TempDirectory:  "/tmp/swiftfs",
 	}
+
+	os.RemoveAll(config.TempDirectory)
+	os.Mkdir(config.TempDirectory, 0755)
 
 	return config
 }
