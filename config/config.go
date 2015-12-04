@@ -38,6 +38,10 @@ type Config struct {
 	// Size of internal slice that includes the objects which from Object Storage.
 	// This parameter affect the performance to build it.
 	ObjectListSize int
+
+	// This option intend that current process is child process.
+	// See daemonize() function in app/app.go.
+	ChildProcess bool
 }
 
 func NewConfig() *Config {
@@ -128,9 +132,6 @@ func (c *Config) GetFlags() []cli.Flag {
 }
 
 func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
-	// No daemon mode
-	c.NoDaemon = ctx.Bool("no-daemon")
-
 	// Debug mode
 	c.Debug = ctx.Bool("debug")
 	if c.Debug {
@@ -145,6 +146,13 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 		log.SetLevel(log.WarnLevel)
 	}
 
+	// No daemon mode
+	if c.Debug {
+		c.NoDaemon = true
+	} else {
+		c.NoDaemon = ctx.Bool("no-daemon")
+	}
+
 	// logfile
 	var logfile = ctx.String("logfile")
 	if logfile != "" {
@@ -156,8 +164,6 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 
 		log.SetFormatter(&LogfileFormatter{})
 		log.SetOutput(f)
-
-		log.Debugf(" to %s", logfile)
 
 	} else {
 		c.Logfile = nil

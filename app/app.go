@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -45,13 +46,18 @@ func Run() {
 			return
 		}
 
+		app.Flags = append(app.Flags, cli.BoolFlag{
+			Name:  "child",
+			Usage: "internal use only",
+		})
+
 		var err error
 		if err = conf.SetConfigFromContext(c); err != nil {
 			log.Warnf("%v", err)
 			return
 		}
 
-		if !conf.NoDaemon {
+		if !conf.ChildProcess {
 			if err = daemonize(c, conf); err != nil {
 				log.Warnf("%v", err)
 				return
@@ -75,7 +81,7 @@ func Run() {
 			return
 		}
 
-		if !conf.Debug {
+		if conf.ChildProcess {
 			afterDaemonize(nil)
 		}
 
@@ -86,7 +92,21 @@ func Run() {
 		log.Debug("Shutdown")
 	}
 
-	app.RunAndExitOnError()
+	// In daemonizing process, "--child" flag wil be used to recognize myelf as child process.
+	// Remove this flag before the Apps parsing the arguments.
+	args := make([]string, 0, len(os.Args))
+	for _, p := range os.Args {
+		if p == "--child" {
+			conf.ChildProcess = true
+		} else {
+			args = append(args, p)
+		}
+	}
+
+	if err := app.Run(args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 func mount(fs pathfs.FileSystem, mountpoint string) (server *fuse.Server, err error) {
@@ -120,7 +140,7 @@ func daemonize(c *cli.Context, conf *config.Config) (err error) {
 	// Spawn a daemon process
 	log.Debug("Spawn a daemon process")
 
-	args := []string{"--no-daemon"}
+	args := []string{"--child"}
 	args = append(args, os.Args[1:]...)
 
 	// Used in IPC
@@ -171,7 +191,6 @@ func daemonize(c *cli.Context, conf *config.Config) (err error) {
 }
 
 func afterDaemonize(err error) {
-	return
 	// Ignore SIGCHLD signal
 	signal.Ignore(syscall.SIGCHLD)
 
