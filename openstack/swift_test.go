@@ -58,10 +58,7 @@ func TestUpload(t *testing.T) {
 func TestGet(t *testing.T) {
 	client.CreateContainer()
 
-	obj, err := client.Get(TEST_OBJECT_NAME)
-	if err != nil {
-		t.Errorf("%v", err)
-	}
+	obj := client.Get(TEST_OBJECT_NAME)
 	defer obj.Body.Close()
 
 	body, err := ioutil.ReadAll(obj.Body)
@@ -75,13 +72,18 @@ func TestGet(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
-	objects := client.List()
+	objch, n := client.List()
 
 	exists := false
-	for _, obj := range objects.List() {
-		if obj.Name == TEST_OBJECT_NAME {
-			exists = true
-			break
+L1:
+	for {
+		select {
+		case obj := <-objch:
+			if obj.Name == TEST_OBJECT_NAME {
+				exists = true
+			}
+		case <-n:
+			break L1
 		}
 	}
 	if !exists {
@@ -94,13 +96,18 @@ func TestDelete(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 
-	objects := client.List()
+	objch, n := client.List()
 
 	exists := false
-	for _, obj := range objects.List() {
-		if obj.Name == TEST_OBJECT_NAME {
-			exists = true
-			break
+L2:
+	for {
+		select {
+		case obj := <-objch:
+			if obj.Name == TEST_OBJECT_NAME {
+				exists = true
+			}
+		case <-n:
+			break L2
 		}
 	}
 	if exists {
@@ -116,18 +123,13 @@ func TestDirectoryCreation(t *testing.T) {
 		t.Errorf("Directory creation failed %v", err)
 	}
 
-	_, err = client.Get(TEST_DIRECTORY)
-	if err != nil {
-		t.Errorf("Directory creation succeeded, but cann't found a directory on Swift")
-	}
-
 	err = client.RemoveDirectory(TEST_DIRECTORY)
 	if err != nil {
 		t.Errorf("Directory deletion failed")
 	}
 
-	dir, err := client.Get(TEST_DIRECTORY)
-	if dir.Name == TEST_DIRECTORY {
+	result := client.Get(TEST_DIRECTORY)
+	if result.Err == nil {
 		t.Errorf("Directory deletion succeeded, but a directory exists on Swift")
 	}
 }
