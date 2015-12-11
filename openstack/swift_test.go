@@ -36,7 +36,6 @@ func TestMain(m *testing.M) {
 }
 
 func TestUpload(t *testing.T) {
-
 	testobj, err := ioutil.TempFile("", "objfs")
 	if err != nil {
 		t.Errorf("%v", err)

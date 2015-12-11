@@ -3,9 +3,7 @@ package mapper
 import (
 	"io/ioutil"
 	"os"
-	"strings"
 	"testing"
-
 	"time"
 
 	"github.com/hironobu-s/swiftfs/config"
@@ -18,57 +16,9 @@ const (
 	TEST_DATA      = "testdata"
 )
 
-// func testobject() *Object {
-// 	path,err := os.Getwd()
-// 	if err
-// 	return &Object{
-// 		Path: path,
-// 	}
-// }
-
-// func (s *MockSwift) Get(name string) objects.DownloadResult {
-// 	str := strings.NewReader("testdata")
-// 	r := objects.DownloadResult{
-// 		Body: ioutil.NopCloser(str),
-// 	}
-// 	return r
-// }
-
-// type TestTransport struct {
-// 	Transport http.RoundTripper
-// }
-
-// func (t *TestTransport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
-// 	// resp := t.Transport.RoundTrip(req)
-// 	// resp := &http.Response{
-// 	// 	Request: req,
-// 	// }
-
-// 	log.Infof("Send    ==>: %s %s", req.Method, req.URL)
-
-// 	// resp, err = t.Transport.RoundTrip(req)
-// 	// resp, err = http.ReadResponse(bufio.NewReader(strings.NewReader("testdata")), req)
-// 	resp = &http.Response{
-// 		Status:     "200 OK",
-// 		StatusCode: 200,
-// 		Proto:      "HTTP/1.0",
-// 		ProtoMajor: 1,
-// 		ProtoMinor: 0,
-// 		Header:     http.Header{},
-// 		Body:       ioutil.NopCloser(strings.NewReader("testdata")),
-// 		Close:      true,
-// 		Trailer:    http.Header{},
-// 		Request:    req,
-// 	}
-
-// 	log.Infof("Receive <==: %d %s (size=%d)", resp.StatusCode, resp.Request.URL, resp.ContentLength)
-
-// 	return resp, nil
-// }
-
 var swift *openstack.Swift
 
-func TestMain(m *testing.M) {
+func initSwift() {
 	c := config.NewConfig()
 	c.ContainerName = TEST_CONTAINER
 
@@ -79,9 +29,6 @@ func TestMain(m *testing.M) {
 	}
 	swift.DeleteContainer()
 	swift.CreateContainer()
-	swift.Upload(TEST_OBJECT, strings.NewReader(TEST_DATA))
-
-	m.Run()
 }
 
 func TestLocalPath(t *testing.T) {
@@ -97,6 +44,9 @@ func TestLocalPath(t *testing.T) {
 
 func TestDownload(t *testing.T) {
 	var err error
+
+	initSwift()
+
 	path := TEST_OBJECT
 	o := &object{
 		Path:  path,
@@ -159,6 +109,7 @@ func TestFlush(t *testing.T) {
 
 func TestUpload(t *testing.T) {
 	var err error
+
 	path := TEST_OBJECT + "2"
 	o := &object{
 		Path:  path,
