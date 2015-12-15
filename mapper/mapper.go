@@ -200,13 +200,17 @@ func (m *ObjectMapper) Delete(path string) (err error) {
 func (m *ObjectMapper) OpenDir(dirname string) []*object {
 	log.Debugf("[mapper] OpenDir %s", dirname)
 
-	list := make([]*object, 0, 100)
+	i := 0
+	list := make([]*object, 0, len(m.objects))
 	for _, obj := range m.objects {
 		if obj.Dir == dirname {
 			log.Debugf("OpenDir() match %s", obj.Dir)
 			list = append(list, obj)
+			i++
 		}
 	}
+	list = list[:i]
+
 	return list
 }
 
