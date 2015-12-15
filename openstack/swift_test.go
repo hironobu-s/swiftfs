@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 
+	"strings"
+
 	"github.com/hironobu-s/swiftfs/config"
 )
 
@@ -142,6 +144,33 @@ func TestContainerCreation(t *testing.T) {
 
 	_, err = client.GetContainer()
 	if err != nil {
+		t.Errorf("%v", err)
+	}
+
+	if err = client.DeleteContainer(); err != nil {
+		t.Errorf("%v", err)
+	}
+
+	_, err = client.GetContainer()
+	if err == nil {
+		t.Errorf("Container deletion failed")
+	}
+}
+
+func TestContainerDeletion(t *testing.T) {
+	var err error
+
+	if err = client.CreateContainer(); err != nil {
+		t.Errorf("%v", err)
+	}
+
+	_, err = client.GetContainer()
+	if err != nil {
+		t.Errorf("%v", err)
+	}
+
+	// confirm to be able to delete container that includes objects.
+	if err = client.Upload(TEST_OBJECT_NAME, strings.NewReader(TEST_OBJECT_DATA)); err != nil {
 		t.Errorf("%v", err)
 	}
 

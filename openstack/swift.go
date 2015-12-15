@@ -249,6 +249,21 @@ func (s *Swift) CreateContainer() error {
 }
 
 func (s *Swift) DeleteContainer() error {
+	var err error
+
+	objch, n := s.List()
+N:
+	for {
+		select {
+		case obj := <-objch:
+			if err = s.Delete(obj.Name); err != nil {
+				return err
+			}
+		case <-n:
+			break N
+		}
+	}
+
 	result := containers.Delete(s.client, s.containerName)
 	return result.Err
 }
