@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"path/filepath"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/hironobu-s/swiftfs/config"
 	"github.com/hironobu-s/swiftfs/openstack"
@@ -190,6 +192,8 @@ func (m *ObjectMapper) Delete(path string) (err error) {
 		if err := os.Remove(obj.Localpath()); err != nil {
 			return err
 		}
+	} else {
+		log.Debugf("[mapper] Not delete localfile of %s. because type is directory", path)
 	}
 	delete(m.objects, path)
 
@@ -233,17 +237,20 @@ func (m *ObjectMapper) Mkdir(path string) (obj *object, err error) {
 }
 
 func (m *ObjectMapper) Rmdir(path string) error {
-	log.Debugf("[mapper] Rmdir %s ", path)
-
 	for _, obj := range m.OpenDir(path) {
 		if obj.Type == DIRECTORY {
 			if err := m.Rmdir(obj.Name); err != nil {
 				return err
 			}
 		} else {
-			m.Delete(obj.Name)
+			p := filepath.Join(path, obj.Name)
+			log.Debugf("[mapper] Rmdir %s ", p)
+			if err := m.Delete(p); err != nil {
+				return err
+			}
 		}
 	}
 
+	log.Debugf("[mapper] Rmdir %s ", path)
 	return m.Delete(path)
 }
