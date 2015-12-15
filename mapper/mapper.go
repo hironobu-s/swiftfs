@@ -95,14 +95,14 @@ func (m *ObjectMapper) Stat() (openstack.Container, error) {
 
 // ----- File operations
 func (m *ObjectMapper) Get(path string) (obj *object, ok bool) {
-	defer log.Debugf("[mapper] Get %s ok=%v", path, ok)
-
 	obj, ok = m.objects[path]
+	log.Debugf("[mapper] Get %s ok=%v", path, ok)
+
 	return obj, ok
 }
 
 func (m *ObjectMapper) Create(path string) (obj *object, err error) {
-	defer log.Debugf("[mapper] Create %s error=%v", path, err)
+	log.Debugf("[mapper] Create %s", path)
 
 	_, ok := m.objects[path]
 	if ok {
@@ -121,7 +121,7 @@ func (m *ObjectMapper) Create(path string) (obj *object, err error) {
 }
 
 func (m *ObjectMapper) Rename(oldPath string, newPath string) (err error) {
-	defer log.Debugf("[mapper] Rename %s to %s, error=%v", oldPath, newPath, err)
+	log.Debugf("[mapper] Rename %s to %s", oldPath, newPath)
 
 	obj, ok := m.objects[oldPath]
 	if !ok {
@@ -174,7 +174,7 @@ func (m *ObjectMapper) Rename(oldPath string, newPath string) (err error) {
 }
 
 func (m *ObjectMapper) Delete(path string) (err error) {
-	defer log.Debugf("[mapper] Delete %s error=%v", path, err)
+	log.Debugf("[mapper] Delete %s", path)
 
 	obj, ok := m.objects[path]
 	if !ok {
@@ -185,7 +185,12 @@ func (m *ObjectMapper) Delete(path string) (err error) {
 		return err
 	}
 
-	os.Remove(obj.Localpath())
+	// Directory does not have localpath.
+	if obj.Type == FILE {
+		if err := os.Remove(obj.Localpath()); err != nil {
+			return err
+		}
+	}
 	delete(m.objects, path)
 
 	return nil
@@ -193,7 +198,7 @@ func (m *ObjectMapper) Delete(path string) (err error) {
 
 // ----- Directory operations
 func (m *ObjectMapper) OpenDir(dirname string) []*object {
-	defer log.Debugf("[mapper] OpenDir %s", dirname)
+	log.Debugf("[mapper] OpenDir %s", dirname)
 
 	list := make([]*object, 0, 100)
 	for _, obj := range m.objects {
@@ -206,7 +211,7 @@ func (m *ObjectMapper) OpenDir(dirname string) []*object {
 }
 
 func (m *ObjectMapper) Mkdir(path string) (obj *object, err error) {
-	defer log.Debugf("[mapper] Mkdir  %s error=%v", path, err)
+	log.Debugf("[mapper] Mkdir  %s", path)
 
 	o, ok := m.objects[path]
 	if ok {
@@ -224,6 +229,17 @@ func (m *ObjectMapper) Mkdir(path string) (obj *object, err error) {
 }
 
 func (m *ObjectMapper) Rmdir(path string) error {
-	defer log.Debugf("[mapper] Rmdir %s ", path)
+	log.Debugf("[mapper] Rmdir %s ", path)
+
+	for _, obj := range m.OpenDir(path) {
+		if obj.Type == DIRECTORY {
+			if err := m.Rmdir(obj.Name); err != nil {
+				return err
+			}
+		} else {
+			m.Delete(obj.Name)
+		}
+	}
+
 	return m.Delete(path)
 }
