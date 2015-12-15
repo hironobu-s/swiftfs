@@ -6,12 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"strings"
+
 	"github.com/hironobu-s/swiftfs/config"
 	"github.com/hironobu-s/swiftfs/openstack"
 )
 
 const (
 	TEST_CONTAINER = "object-test-container"
+	TEST_DIRECTORY = "test-directory"
 	TEST_OBJECT    = "test-object"
 	TEST_DATA      = "testdata"
 )
@@ -23,12 +26,18 @@ func initSwift() {
 	c.ContainerName = TEST_CONTAINER
 
 	// initialize swift
+	var err error
 	swift = openstack.NewSwift(c)
-	if err := swift.Auth(); err != nil {
+	if err = swift.Auth(); err != nil {
 		panic(err)
 	}
-	swift.DeleteContainer()
-	swift.CreateContainer()
+	if err = swift.DeleteContainer(); err != nil {
+		// 404
+	}
+
+	if err = swift.CreateContainer(); err != nil {
+		panic(err)
+	}
 }
 
 func TestLocalPath(t *testing.T) {
@@ -47,6 +56,12 @@ func TestDownload(t *testing.T) {
 
 	initSwift()
 
+	// upload test object
+	if err = swift.Upload(TEST_OBJECT, strings.NewReader(TEST_DATA)); err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	// download test
 	path := TEST_OBJECT
 	o := &object{
 		Path:  path,
@@ -71,20 +86,20 @@ func TestDownload(t *testing.T) {
 	}
 }
 
-// func TestOpen(t *testing.T) {
-// 	path := TEST_OBJECT
-// 	o := &object{
-// 		Path: path,
-// 	}
+func TestOpen(t *testing.T) {
+	path := TEST_OBJECT
+	o := &object{
+		Path: path,
+	}
 
-// 	file, err := o.Open(os.O_RDWR, 0600)
-// 	if err != nil {
-// 		t.Errorf("%v", err)
+	file, err := o.Open(os.O_RDWR, 0600)
+	if err != nil {
+		t.Errorf("%v", err)
 
-// 	} else if file.Name() != o.Localpath() {
-// 		t.Errorf("localpath mismatched %s != %s", path, o.Localpath())
-// 	}
-// }
+	} else if file.Name() != o.Localpath() {
+		t.Errorf("localpath mismatched %s != %s", path, o.Localpath())
+	}
+}
 
 func TestFlush(t *testing.T) {
 	var err error
