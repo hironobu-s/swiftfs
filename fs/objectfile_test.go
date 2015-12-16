@@ -1,18 +1,15 @@
 package fs
 
 import (
-	"fmt"
-	"io/ioutil"
-	"os"
-	"testing"
-	"time"
-
 	"math/rand"
-
+	"os"
 	"strings"
+	"testing"
 
+	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"github.com/hironobu-s/swiftfs/config"
+	"github.com/hironobu-s/swiftfs/mapper"
 	"github.com/hironobu-s/swiftfs/openstack"
 )
 
@@ -25,74 +22,81 @@ const (
 
 var objfile *ObjectFile
 
-func TestMain(m *testing.M) {
+func TestSetup(t *testing.T) {
 	var err error
 
-	config := &config.Config{
-		MountPoint:      TEST_MOUNTPOINT,
-		ContainerName:   TEST_CONTAINER_NAME,
-		CreateContainer: true,
-		Debug:           true,
-		NoDaemon:        true,
-	}
+	c := config.NewConfig()
+	c.MountPoint = TEST_MOUNTPOINT
+	c.ContainerName = TEST_CONTAINER_NAME
+	c.CreateContainer = true
+	c.Debug = true
+	c.NoDaemon = true
 
 	// initialize swift and uplaod testdata
-	swift := openstack.NewSwift(config)
+	swift := openstack.NewSwift(c)
 	if err = swift.Auth(); err != nil {
-		fmt.Printf("%v", err)
-		os.Exit(1)
+		t.Fatalf("%v", err)
 	}
-	f, err := ioutil.TempFile("", "objcefile-test")
+
+	swift.DeleteContainer()
+	swift.CreateContainer()
+
+	// mapper
+	mp, err := mapper.NewObjectMapper(c)
 	if err != nil {
-		fmt.Printf("%v", err)
-		os.Exit(1)
+		t.Fatalf("%v", err)
 	}
-	defer f.Close()
-
-	f.WriteString(TEST_DATA)
-	f.Seek(0, os.SEEK_SET)
-	swift.Upload(TEST_OBJECT_NAME, f)
-
-	// initialize
-	obj := &openstack.Object{
-		Name:         TEST_OBJECT_NAME,
-		Body:         nil,
-		Size:         uint64(len(TEST_DATA)),
-		LastModified: time.Now(),
-		Type:         openstack.FILE,
-	}
-
-	objfile, err = NewObjectFile(TEST_OBJECT_NAME, swift, obj)
+	obj, err := mp.Create(TEST_OBJECT_NAME)
 	if err != nil {
-		fmt.Printf("%v", err)
-		os.Exit(1)
+		t.Fatalf("%v", err)
 	}
-	fmt.Printf("%v", objfile)
+	file, err := obj.Open(os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
 
-	os.Exit(m.Run())
+	_, err = file.WriteString(TEST_DATA)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	file.Close()
+
+	// initialize ObjectFile
+	objfile = NewObjectFile(TEST_OBJECT_NAME, obj)
 }
 
 func TestNewObjectFile(t *testing.T) {
-	if objfile.file == nil {
-		t.Errorf("objfile.file is nil")
+	if objfile.name == "" {
+		t.Fatalf("objfile.name is nil")
 	}
-	stat, err := os.Stat(objfile.file.Name())
+	if objfile.object == nil {
+		t.Fatalf("objfile.obj is nil")
+	}
+}
+
+func TestOpenLocalFile(t *testing.T) {
+	err := objfile.OpenLocalFile(uint32(os.O_RDWR), 0600)
 	if err != nil {
-		t.Errorf("Stat() fail")
+		t.Fatalf("OpenLocalFile() fail %v", err)
+	}
+
+	stat, err := os.Stat(objfile.localfile.Name())
+	if err != nil {
+		t.Fatalf("Stat() fail")
 	}
 	if stat.Size() != int64(len(TEST_DATA)) {
-		t.Errorf("NewObjectFile() called, ")
+		t.Fatalf("NewObjectFile() called, ")
 	}
 }
 
 func TestSetInode(t *testing.T) {
-	objfile.Inode = nil
+	objfile.inode = nil
 
 	inode := &nodefs.Inode{}
 
 	objfile.SetInode(inode)
-	if objfile.Inode == nil {
-		t.Errorf("Inode is nil")
+	if objfile.inode == nil {
+		t.Fatalf("Inode is nil")
 	}
 }
 
@@ -103,14 +107,14 @@ func TestRead(t *testing.T) {
 		buf := make([]byte, l)
 		res, code := objfile.Read(buf, offset)
 		if !code.Ok() {
-			t.Errorf("Read() error, (not OK)")
+			t.Fatalf("Read() error, (not OK)")
 		}
 
 		read, _ := res.Bytes(buf)
 		data := string(read)
 
 		if TEST_DATA[offset:offset+l] != data {
-			t.Errorf("Read() returns invalid data. (offset:%d, size:%d)", offset, size)
+			t.Fatalf("Read() returns invalid data. (offset:%d, size:%d)", offset, size)
 		}
 	}
 
@@ -118,7 +122,6 @@ func TestRead(t *testing.T) {
 	for i < 10 {
 		size := rand.Int63n(int64(len(TEST_DATA)))
 		offset := rand.Int63n(size - 1)
-		t.Logf("%d, %d", size, offset)
 		compare(offset, size)
 		i++
 	}
@@ -126,18 +129,21 @@ func TestRead(t *testing.T) {
 
 func TestWrite(t *testing.T) {
 	prefix := "testdata"
-	objfile.Write([]byte(prefix), 0)
+	_, status := objfile.Write([]byte(prefix), 0)
+	if status != fuse.OK {
+		t.Fatalf("Write() returns error, %v", status)
+	}
 
 	buf := make([]byte, 32)
 	res, code := objfile.Read(buf, 0)
 	if !code.Ok() {
-		t.Errorf("Write() error, (not OK)")
+		t.Fatalf("Write() error, not OK")
 	}
 
 	r, _ := res.Bytes(buf)
 	read := string(r)
 
 	if !strings.HasPrefix(read, "testdata") {
-		t.Errorf("Write() returns the data that does not have prefix")
+		t.Fatalf("Write() returns invalid data, %s", read)
 	}
 }

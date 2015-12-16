@@ -10,17 +10,14 @@ import (
 	"time"
 
 	"github.com/hanwen/go-fuse/fuse"
+	"github.com/hanwen/go-fuse/fuse/nodefs"
+	"github.com/hanwen/go-fuse/fuse/pathfs"
 	"github.com/hironobu-s/swiftfs/config"
+	"github.com/hironobu-s/swiftfs/mapper"
 	"github.com/hironobu-s/swiftfs/openstack"
 )
 
-const (
-	TEST_MOUNTPOINT     = "swiftfs-testrun"
-	TEST_CONTAINER_NAME = "swiftfs-test"
-)
-
-var fs *fileSystem
-var server *fuse.Server
+// --------------- utility funcs ---------------
 
 func getCurrentUser() fuse.Owner {
 	owner := fuse.Owner{
@@ -56,13 +53,23 @@ func getContext() *fuse.Context {
 	return c
 }
 
-// ---------------------
+// --------------- mount/unmount for tests ---------------
 
-func TestMain(m *testing.M) {
+var fs *objectFileSystem
+var server *fuse.Server
+
+func mount() error {
 	var err error
 
+	if fs != nil || server != nil {
+		// already mounting
+		return nil
+	}
+
+	// create mountpoint
 	os.Mkdir(TEST_MOUNTPOINT, 0777)
 
+	// config
 	config := &config.Config{
 		MountPoint:      TEST_MOUNTPOINT,
 		ContainerName:   TEST_CONTAINER_NAME,
@@ -76,9 +83,26 @@ func TestMain(m *testing.M) {
 	swift.Auth()
 	swift.DeleteContainer()
 
-	// initialize
-	fs = NewFileSystem(config)
-	server, err = fs.Mount()
+	// mapper
+	mapper, err := mapper.NewObjectMapper(config)
+	if err != nil {
+		fmt.Printf("%v", err)
+		os.Exit(1)
+	}
+
+	// initialize filesystem
+	fs = NewObjectFileSystem(config, mapper)
+
+	path := pathfs.NewPathNodeFs(fs, nil)
+	con := nodefs.NewFileSystemConnector(path.Root(), &nodefs.Options{})
+
+	opts := &fuse.MountOptions{
+		Name:   "test-filesystem",
+		FsName: "test-filesystem",
+	}
+
+	// create server and do mount with dedicated goroutine
+	server, err = fuse.NewServer(con.RawFS(), TEST_MOUNTPOINT, opts)
 	if err != nil {
 		fmt.Printf("%v", err)
 		os.Exit(1)
@@ -90,32 +114,37 @@ func TestMain(m *testing.M) {
 
 	server.WaitMount()
 
-	code := m.Run()
-	os.RemoveAll(TEST_MOUNTPOINT)
-	server.Unmount()
-	os.Exit(code)
+	return nil
 }
 
-func TestNewFileSystem(t *testing.T) {
+// --------------- tests ---------------
+
+func TestNewObjectFileSystem(t *testing.T) {
 	config := &config.Config{
 		MountPoint:      TEST_MOUNTPOINT,
 		ContainerName:   TEST_CONTAINER_NAME,
 		CreateContainer: true,
 	}
 
-	f := NewFileSystem(config)
-
-	if f.containerName != TEST_CONTAINER_NAME {
-		t.Errorf("ContainerName is different (%s != %s)", f.containerName, TEST_CONTAINER_NAME)
+	mapper, err := mapper.NewObjectMapper(config)
+	if err != nil {
+		t.Fatalf("%v", err)
 	}
 
-	if f.mountPoint != TEST_MOUNTPOINT {
+	f := NewObjectFileSystem(config, mapper)
+
+	if f.containerName != TEST_CONTAINER_NAME {
 		t.Errorf("ContainerName is different (%s != %s)", f.containerName, TEST_CONTAINER_NAME)
 	}
 
 	if !f.createContainer {
 		t.Errorf("CreateContainer option is false")
 	}
+}
+
+// Mount filesystem
+func TestBeforeAll(t *testing.T) {
+	mount()
 }
 
 func TestCreate(t *testing.T) {
@@ -352,7 +381,6 @@ func TestRename(t *testing.T) {
 }
 
 func TestRmdir(t *testing.T) {
-	//var err error
 	name := "rmdir_test"
 	path := filepath.Join(TEST_MOUNTPOINT, name)
 
@@ -378,4 +406,10 @@ func TestRmdir(t *testing.T) {
 		t.Errorf("Rmdir (GetAttr should returns ENOENT)")
 		return
 	}
+}
+
+// Unmount after run all tests
+func TestAfterAll(t *testing.T) {
+	server.Unmount()
+	os.RemoveAll(TEST_MOUNTPOINT)
 }
