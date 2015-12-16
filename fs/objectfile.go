@@ -2,11 +2,10 @@ package fs
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"syscall"
 	"time"
-
-	"os"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/hanwen/go-fuse/fuse"
@@ -41,7 +40,7 @@ func NewObjectFile(name string, obj mapper.Object) *ObjectFile {
 	return f
 }
 
-func (o *ObjectFile) OpenLocalFile(flag uint32, mode uint32, context *fuse.Context) error {
+func (o *ObjectFile) OpenLocalFile(flag uint32, mode uint32) error {
 	var err error
 	o.localfile, err = o.object.Open(int(flag), os.FileMode(mode))
 	if err != nil {

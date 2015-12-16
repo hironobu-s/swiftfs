@@ -161,7 +161,7 @@ func (fs *objectFileSystem) Create(name string, flags uint32, mode uint32, conte
 	}
 
 	file := NewObjectFile(name, obj)
-	if err := file.OpenLocalFile(flags, mode, context); err != nil {
+	if err := file.OpenLocalFile(flags, mode); err != nil {
 		log.Warnf("Create: OpenLocalFile() error %v", err)
 		return file, fuse.EIO
 	}
@@ -186,7 +186,7 @@ func (fs *objectFileSystem) Open(name string, flags uint32, context *fuse.Contex
 	}
 
 	file := NewObjectFile(name, obj)
-	if err := file.OpenLocalFile(flags, 0, context); err != nil {
+	if err := file.OpenLocalFile(flags, 0); err != nil {
 		log.Warnf("Open() error %v", err)
 		return file, fuse.EIO
 	}
