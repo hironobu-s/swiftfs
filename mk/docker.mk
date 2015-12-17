@@ -1,5 +1,4 @@
 all:
-	docker build -t
 	docker run \
 		-v `pwd`:/go/src/github.com/hironobu-s/swiftfs \
 		-w /go/src/github.com/hironobu-s/swiftfs \
