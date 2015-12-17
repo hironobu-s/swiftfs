@@ -1,20 +1,10 @@
 NAME=swiftfs
 BINDIR=bin
 GOARCH=amd64
+USE_CONTAINER ?=
 
-all: clean  linux
-
-darwin:
-	GOOS=$@ GOARCH=$(GOARCH) go build $(GOFLAGS) -o $(BINDIR)/$@/$(NAME)
-	cd bin/$@; gzip -c $(NAME) > $(NAME)-osx.$(GOARCH).gz
-
-linux:
-	GOOS=$@ GOARCH=$(GOARCH) go build $(GOFLAGS) -o $(BINDIR)/$@/$(NAME)
-	cd bin/$@; gzip -c $(NAME) > $(NAME)-linux.$(GOARCH).gz
-
-clean:
-	rm -rf $(BINDIR)
-
-test:
-	go test -v *.go
-	go test -v command/*.go
+ifeq ($(USE_DOCKER),1)
+  include mk/docker.mk
+else
+  include mk/local.mk
+endif
