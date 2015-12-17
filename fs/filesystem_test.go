@@ -1,7 +1,6 @@
 package fs
 
 import (
-	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -80,14 +79,15 @@ func mount() error {
 
 	// swift
 	swift := openstack.NewSwift(config)
-	swift.Auth()
+	if err = swift.Auth(); err != nil {
+		return err
+	}
 	swift.DeleteContainer()
 
 	// mapper
 	mapper, err := mapper.NewObjectMapper(config)
 	if err != nil {
-		fmt.Printf("%v", err)
-		os.Exit(1)
+		return err
 	}
 
 	// initialize filesystem
@@ -104,8 +104,7 @@ func mount() error {
 	// create server and do mount with dedicated goroutine
 	server, err = fuse.NewServer(con.RawFS(), TEST_MOUNTPOINT, opts)
 	if err != nil {
-		fmt.Printf("%v", err)
-		os.Exit(1)
+		return err
 	}
 
 	go func() {
