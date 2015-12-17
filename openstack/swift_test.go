@@ -3,10 +3,10 @@ package openstack
 import (
 	"io/ioutil"
 	"os"
+	"strings"
 	"testing"
 
-	"strings"
-
+	log "github.com/Sirupsen/logrus"
 	"github.com/hironobu-s/swiftfs/config"
 )
 
@@ -27,7 +27,8 @@ func TestMain(m *testing.M) {
 
 	client = NewSwift(c)
 	if err = client.Auth(); err != nil {
-		panic(err)
+		log.Fatalf("%v", err)
+		os.Exit(1)
 	}
 
 	client.CreateContainer()
