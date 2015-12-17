@@ -23,7 +23,9 @@ func TestNewObjectMapper(t *testing.T) {
 	// logrus.SetLevel(logrus.DebugLevel)
 
 	// init swift
-	initSwift()
+	if err := initSwift(); err != nil {
+		t.Fatalf("%v", err)
+	}
 	swift.DeleteContainer()
 	swift.CreateContainer()
 

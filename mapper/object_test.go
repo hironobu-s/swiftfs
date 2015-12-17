@@ -8,6 +8,7 @@ import (
 
 	"strings"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/hironobu-s/swiftfs/config"
 	"github.com/hironobu-s/swiftfs/openstack"
 )
@@ -21,7 +22,16 @@ const (
 
 var swift *openstack.Swift
 
-func initSwift() {
+func TestMain(m *testing.M) {
+	if err := initSwift(); err != nil {
+		log.Errorf("%v", err)
+		os.Exit(1)
+	} else {
+		os.Exit(m.Run())
+	}
+}
+
+func initSwift() error {
 	c := config.NewConfig()
 	c.ContainerName = TEST_CONTAINER
 
@@ -29,15 +39,16 @@ func initSwift() {
 	var err error
 	swift = openstack.NewSwift(c)
 	if err = swift.Auth(); err != nil {
-		panic(err)
+		return err
 	}
 	if err = swift.DeleteContainer(); err != nil {
 		// 404
 	}
 
 	if err = swift.CreateContainer(); err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }
 
 func TestLocalPath(t *testing.T) {
@@ -53,8 +64,6 @@ func TestLocalPath(t *testing.T) {
 
 func TestDownload(t *testing.T) {
 	var err error
-
-	initSwift()
 
 	// upload test object
 	if err = swift.Upload(TEST_OBJECT, strings.NewReader(TEST_DATA)); err != nil {
