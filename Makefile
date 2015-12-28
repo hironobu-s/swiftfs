@@ -1,10 +1,10 @@
 NAME=swiftfs
 BINDIR=bin
 GOARCH=amd64
-USE_CONTAINER ?=
+NO_DOCKER ?=
 
-ifeq ($(USE_DOCKER),1)
-  include mk/docker.mk
-else
+ifeq ($(NO_DOCKER),1)
   include mk/local.mk
+else
+  include mk/docker.mk
 endif
