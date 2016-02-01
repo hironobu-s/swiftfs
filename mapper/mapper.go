@@ -18,6 +18,10 @@ type ObjectMapper struct {
 	tmproot string // tmp path
 	objects map[string]*object
 	swift   *openstack.Swift
+
+	// object list caching
+	objectCacheTime int
+	lastCached      time.Time
 }
 
 func NewObjectMapper(c *config.Config) (*ObjectMapper, error) {
@@ -41,9 +45,11 @@ func NewObjectMapper(c *config.Config) (*ObjectMapper, error) {
 	}
 
 	m := &ObjectMapper{
-		tmproot: c.TempDirectory,
-		objects: map[string]*object{},
-		swift:   swift,
+		tmproot:         c.TempDirectory,
+		objects:         map[string]*object{},
+		swift:           swift,
+		objectCacheTime: c.ObjectCacheTime,
+		lastCached:      time.Now(),
 	}
 
 	m.syncObjects()
@@ -203,6 +209,12 @@ func (m *ObjectMapper) Delete(path string) (err error) {
 // ----- Directory operations
 func (m *ObjectMapper) OpenDir(dirname string) []*object {
 	log.Debugf("[mapper] OpenDir %s", dirname)
+
+	d := time.Since(m.lastCached)
+	if d.Seconds() > float64(m.objectCacheTime) {
+		m.syncObjects()
+		m.lastCached = time.Now()
+	}
 
 	i := 0
 	list := make([]*object, 0, len(m.objects))
