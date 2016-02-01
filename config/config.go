@@ -39,6 +39,9 @@ type Config struct {
 	// This parameter affect the performance to build it.
 	ObjectListSize int
 
+	// Time(sec) for internal slice
+	ObjectCacheTime int
+
 	// This option intend that current process is child process.
 	// See daemonize() function in app/app.go.
 	ChildProcess bool
@@ -81,6 +84,12 @@ func (c *Config) GetFlags() []cli.Flag {
 		cli.BoolFlag{
 			Name:  "create-container, c",
 			Usage: "Create a container if is not exist",
+		},
+
+		cli.IntFlag{
+			Name:  "object-cache-time",
+			Usage: "The time(sec) that how long is internal object-list cached. default is -1, it will not be cached.",
+			Value: -1,
 		},
 
 		cli.StringFlag{
@@ -201,6 +210,9 @@ func (c *Config) SetConfigFromContext(ctx *cli.Context) (err error) {
 	if c.ContainerName == "" {
 		return fmt.Errorf("Container name was not provided.")
 	}
+
+	// Object cache time
+	c.ObjectCacheTime = ctx.Int("object-cache-time")
 
 	// Default 1000
 	c.ObjectListSize = 1000

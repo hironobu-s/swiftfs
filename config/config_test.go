@@ -51,6 +51,7 @@ func TestSetConfigFromContext(t *testing.T) {
 		"--no-daemon",
 		"--logfile=log.txt",
 		"--create-container",
+		"--object-cache-time=10",
 		"testcontainer",
 		"testmountpoint",
 	}
@@ -76,6 +77,10 @@ func TestSetConfigFromContext(t *testing.T) {
 
 	if config.Logfile == nil {
 		t.Errorf("The config parameter \"Logfile\" is null in spite of --logfile flag is specified")
+	}
+
+	if config.ObjectCacheTime != 10 {
+		t.Errorf("The config parameter \"ObjectListCacheTime\" != 10, [%v]", config.ObjectCacheTime)
 	}
 
 	if config.ContainerName != "testcontainer" {
