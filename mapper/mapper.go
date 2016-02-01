@@ -15,7 +15,6 @@ import (
 )
 
 type ObjectMapper struct {
-	tmproot string // tmp path
 	objects map[string]*object
 	swift   *openstack.Swift
 }
@@ -41,7 +40,6 @@ func NewObjectMapper(c *config.Config) (*ObjectMapper, error) {
 	}
 
 	m := &ObjectMapper{
-		tmproot: c.TempDirectory,
 		objects: map[string]*object{},
 		swift:   swift,
 	}
