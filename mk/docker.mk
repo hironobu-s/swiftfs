@@ -1,4 +1,4 @@
-all:
+all: binary
 
 binary:
 	docker run \
