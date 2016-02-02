@@ -68,6 +68,7 @@ func Run() {
 		mapper, err := mapper.NewObjectMapper(conf)
 		if err != nil {
 			log.Warnf("%v", err)
+			afterDaemonize(err)
 			return
 		}
 
@@ -78,6 +79,7 @@ func Run() {
 		server, err := mount(objectFs, conf.MountPoint)
 		if err != nil {
 			log.Warnf("%v", err)
+			afterDaemonize(err)
 			return
 		}
 
