@@ -86,6 +86,10 @@ Start an swiftfs process as a foreground (for debugging)
 
 The logfile name that appends some information instead of stdout/stderr
 
+**----object-cache-time**
+
+The time(sec) that how long is internal object-list cached. default is -1, it will not be cached.
+
 **--create-container, -c**
 
 Create a container if is not exist
