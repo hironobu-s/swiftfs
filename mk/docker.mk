@@ -11,6 +11,3 @@ binary:
 		make
 	docker cp swiftfs-onbuild:/go/src/github.com/hironobu-s/swiftfs/bin bin
 	docker rm swiftfs-onbuild
-
-rpm:
-	make -C build/rpm

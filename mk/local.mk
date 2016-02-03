@@ -1,4 +1,4 @@
-all: clean  linux
+all: clean linux
 
 linux:
 	go get .
