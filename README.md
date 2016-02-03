@@ -22,6 +22,11 @@ SwiftFSはOpenStack Swift[^1]のコンテナをFUSE(Filesystem in Userspace)を�
 curl -sL https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs.amd64.gz | zcat > swiftfs && chmod +x swiftfs
 ```
 
+Redhat, CentOSの場合はRPMパッケージも利用できます(CentOS6.7, CentOS7.2で確認してます)。
+
+```shell
+rpm -Uvh https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs-0.2.1-1.el6.x86_64.rpm
+```
 
 ## 使い方
 

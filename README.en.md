@@ -11,10 +11,14 @@ This product may works on some OpenStack environments. We are testing on the fol
 
 Please download an executable file from [GitHub Release](https://github.com/hironobu-s/swiftfs/releases).
 
-### Linux(amd64)
-
 ```shell
 F=swiftfs curl -sL https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs.amd64.gz | zcat > $F && chmod +x $F
+```
+
+You can also use an RPM package.
+
+```shell
+rpm -Uvh https://github.com/hironobu-s/swiftfs/releases/download/current/swiftfs-0.2.1-1.el6.x86_64.rpm
 ```
 
 
