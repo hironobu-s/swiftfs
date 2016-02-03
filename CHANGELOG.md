@@ -4,11 +4,11 @@
 
 * Add `--object-cache-time`
 
-# Version 0.2
+## Version 0.2
 
 * Improve daemonize process and error handling
 * bug fix
 
-# Version 0.1
+## Version 0.1
 
 * Initial release
